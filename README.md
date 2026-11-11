@@ -14,6 +14,8 @@ Version 1.0, 2026-11-11.
 
 - The skill folder `marionette/`: the skill itself (`SKILL.md`) and the setup
   templates it reads only on first use (`templates/`).
+- A small check that runs at the end of every scheduled run and tells you, at the top
+  of the run's message, which of your channels were not read and why.
 - On first use, Marionette sets itself up: it creates its folders and starter files on
   your computer, asks you a few questions (how to address you, your language, your
   working days, when to check, whether to start in shadow mode), and creates its
@@ -70,6 +72,19 @@ rule is an instruction to the model, not a technical barrier. To reduce the risk
 - Consider starting in shadow mode, offered during setup: Marionette records what it
   finds but writes no drafts and sends no notifications until you switch it to live.
 
+## How rules are kept
+
+You will keep telling Marionette how you want things done. Each of those rules is
+written in exactly one file, so two files can never disagree:
+
+- rules that always apply: `MANUAL.md`;
+- rules about one person, client, sender or desk: `rules_by_subject.md`, looked up
+  when that subject comes up;
+- rules for one channel: `channels.md`; for one job: its file in `jobs/`.
+
+A decision that is a rule is not finished until it names the file that carries it.
+`CHANGELOG.md` explains why this was added.
+
 ## Status
 
 Marionette is in daily use by its author. Setup by other users has not been tested
@@ -105,3 +120,5 @@ private installation it is the author's request.
 ## Tests
 
 `python3 tests/test_brief.py` checks the late rule in `marionette/templates/brief.py`.
+`python3 tests/test_run_gate.py` checks the end-of-run check in
+`marionette/templates/run_gate.py`.
