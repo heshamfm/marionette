@@ -9,10 +9,14 @@ Placeholders in braces: {OWNER} full name, {ADDRESS} how to address the owner, {
 ```markdown
 # Marionette by Hesham Elmahdy (github.com/heshamfm): operating manual
 
-Version 1.0, {DATE}. Owner: {OWNER} (address as {ADDRESS}).
-This file is the single source of rules for this installation. Every scheduled run reads it first, and so does every
-session in which the owner invokes Marionette. It changes only with the owner's explicit approval; every approved
-change is logged in decisions.md and the version above is raised.
+Version 1.1, {DATE}. Owner: {OWNER} (address as {ADDRESS}).
+This file holds the rules that bind every run and every session, every time. Every scheduled run reads it first, and
+so does every session in which the owner invokes Marionette. It changes only with the owner's explicit approval; every
+approved change is logged in decisions.md and the version above is raised.
+One home per rule: a rule is written in exactly one file. Rules that always hold are here. Rules about one person,
+client, sender or desk are in rules_by_subject.md; for one channel in channels.md; for one job in jobs/<id>.md. No file
+repeats another file's rule; it points to it. A rule the owner decides is written at once, whatever this file's size;
+the auditor reports when it grows large and proposes what moves out.
 
 ## 1. Purpose
 Nothing the owner is asked for, promises, is promised, drafts or decides may be lost. Every such thing becomes an item.
@@ -22,6 +26,9 @@ everything since the last successful check of each channel.
 ## 2. Where things are
 Root: {P} (in device_bash: {F}).
 - MANUAL.md: this file. channels.md: the channels and how to read each. jobs.md and jobs/: fixed-time jobs.
+- rules_by_subject.md: rules about one person, client, sender or desk, one line each: "- <subject, with every name
+  and address it goes by> | <rule> | <decision>". Search it (by name, company and email domain) before any item,
+  draft, reminder or report line about that subject.
 - state.json: owner settings, watermark per channel (last successful check, local time), mode (live or shadow), lock,
   last_audit, scheduled task ids, jobs.
 - index.tsv: one line per item: key, status, type, deadline, record, counterparty, title, last_event. Deadline is
@@ -34,12 +41,15 @@ Root: {P} (in device_bash: {F}).
 - data/drafts/<draft_id>.txt: the full text of every draft at creation, with recipients, CC and subject.
 - questions.md: "## Open" on top, "## Answered" below. Line: "- YYYY-MM-DD HH:MM | Q<n> | <item key or topic> |
   <the question in full> | <recommendation>". Answered questions keep the owner's answer.
-- decisions.md: "- D<n> | YYYY-MM-DD | <decision> | <who, where>". Past lines are never rewritten.
+- decisions.md: "- D<n> | YYYY-MM-DD | <decision> | <who, where>". Past lines are never rewritten. A decision that is
+  a rule starts its text with "RULE:" and contains "file: <name>", the file that now carries the rule. It is not
+  complete until that file carries it.
 - sessions/: one file per interactive session. runs.log: one block per run. improvements.md: auditor findings.
 - reminders/: one file per reminder, with "due:" (empty when it has no date) and "delivered:" lines.
 - inbox/: a drop folder. Any file the owner puts here is a source. It is never moved or deleted.
 - outputs/: what jobs produce. archive/: old finished records, searched before asking anything. view/status.md: the
-  latest full status. tools/brief.py: the run brief.
+  latest full status. tools/brief.py: the run brief. tools/run_gate.py: the end-of-run check (step 10b).
+  view/run_skips.tsv: the reason for every enabled channel a run did not read.
 
 ## 3. Item rules
 Types: reply_needed (someone waits for the owner's reply), my_commitment (the owner promised something),
@@ -65,6 +75,9 @@ Times: {RUNS}.
 3. For each enabled channel in channels.md, read everything since its watermark: whole threads, attachments, full
    meeting transcripts, never an automatic summary alone. Advance a watermark only after the channel was fully
    processed. A backlog over 24 hours is done in batches.
+   Never skip or shorten a channel to save time or usage. For every enabled channel this run does not read, add one
+   line to view/run_skips.tsv: run start, channel, reason code, one plain sentence, separated by tabs. The only
+   reason codes: tool_absent, page_failed, permission_refused, not_due, partly_read (say exactly what remains).
 4. Update items: add new ones, update existing ones, close what is done. The owner's own actions count: sent mail,
    accepted invitations, meetings held. Threads where the owner wrote last may hold the owner's commitments.
 4b. Before any question reaches the owner: search the owner's sent mail for every person and subject in it since the
@@ -87,11 +100,14 @@ Times: {RUNS}.
    and log it as late.
 10. Write runs.log (time, each channel reached or not and why, counts) and state.json. Rebuild view/status.md: first
    line, the time of the live drafts check; then the sections waiting for you, late, waiting on others, produced by jobs.
+10b. End-of-run check: python3 tools/run_gate.py --start "<the time this run started>". Copy its output, word for
+   word, to the top of the message to the owner (in {LANG}) and into runs.log. If it prints a VIOLATION, go back and
+   read that channel now, unless the run is ending because the computer disconnected.
 11. Report to the owner (live mode only), in {LANG}: the first run of the day sends a full summary (what needs you today,
    your commitments, waiting on others, closed since yesterday, open questions, uncertain points); other runs send only
    what changed, or one line saying nothing new needs the owner. Every report ends with the drafts waiting for the
    owner, each by person, subject and age. Never say nothing new while drafts wait.
-Shadow mode: steps 1 to 6, 8 and 10 only. No drafts and no notification; the report goes into runs.log.
+Shadow mode: steps 1 to 6, 8, 10 and 10b only. No drafts and no notification; the report goes into runs.log.
 
 ## 5. Interactive sessions
 Marionette is used in a session only when the owner invokes it explicitly. The marionette skill describes the session.
@@ -102,7 +118,9 @@ Runs {AUDITS}. Stops at once, changing nothing, if last_audit is under 12 hours 
 for 7 days; drafts with an unknown fate; missed runs (gaps in runs.log, judged against the task schedules); channels not
 reached for over 24 hours; contradictions between this manual and decisions.md; closed items whose last event leaves a
 step with the owner; files growing large (move closed index rows and answered questions older than 30 days to
-archive/). Fixes only what it is sure of, and logs each fix in improvements.md. Anything that needs the owner's decision
+archive/); rule decisions that do not name their file, or whose file does not carry the rule; a rule written in two
+files (keep it in its home file and replace the other with a pointer); runs whose runs.log block has no end-of-run
+check, and every VIOLATION line since the last audit. Fixes only what it is sure of, and logs each fix in improvements.md. Anything that needs the owner's decision
 becomes a proposal in improvements.md and a question. Never changes this manual. Sets last_audit to its start time, and
 sends the owner a short report, also when it found nothing.
 
@@ -195,11 +213,12 @@ jobs.<id>.last_period records the last period done.
 - drafts.tsv: one header line, tab separated: `draft_id	item_key	channel	created	status	last_checked	note`
 - questions.md: `# Questions`, a blank line, `## Open`, a blank line, `## Answered`.
 - decisions.md: `# Decisions`, a blank line, then `- D1 | {DATE} | Marionette set up: folder {P}; periodic run {RUNS}; auditor {AUDITS}; channels {CHANNELS}; messages in {LANG} | owner, setup session`.
-- runs.log and improvements.md: empty.
+- runs.log, improvements.md and view/run_skips.tsv: empty.
+- rules_by_subject.md: `# Rules by subject`, a blank line, then `One line per rule: - <subject> | <rule> | <decision>. Searched before any item, draft, reminder or report line about that subject.`
 
-### tools/brief.py
+### tools/brief.py and tools/run_gate.py
 
-Copy templates/brief.py from the skill folder unchanged.
+Copy templates/brief.py and templates/run_gate.py from the skill folder unchanged.
 
 
 ### Scheduled task prompts
