@@ -82,7 +82,7 @@ def check(root, start):
 
 
 CODES = ('marketing', 'job_application', 'no_action_notice', 'duplicate:', 'rule:')
-CLOSED = ('done', 'dropped', 'closed')
+CLOSED = ('done', 'closed_no_action')
 
 
 def dispositions(root, bad):
