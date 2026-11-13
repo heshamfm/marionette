@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.3 (2026-11-13)
+
+### Why this release exists
+
+A reader asked in public: what happens to the original task when the promise changes in
+a later meeting? The intended answer was "the record is updated". A review of the
+published text showed that nothing guaranteed it:
+
+- An item's key comes from its source. A later meeting is a new source, so a run could
+  open a second item for the same promise, and the first one would then show as late
+  against a date that no longer applied.
+- Only Story lines were protected from being overwritten. Nothing said the old wording
+  must be written down before the item was changed.
+- Nothing said what to do when it is unclear whether the new terms replace the old
+  promise or add a second one.
+
+### What changed
+
+- A promise that changes belongs to the item that already carries it, whatever source
+  the change came from. No second item is opened.
+- The change is written first as a Story line with both versions, the source and the
+  date. Only then are "Needed", the title and the deadline updated. The old version
+  always survives.
+- When it is not certain that it is the same promise, nothing is merged or overwritten:
+  both items stay open and the owner gets one question that states both in full.
+- The auditor lists open items with the same counterparty and an overlapping subject,
+  and raises each pair as a question with a proposal to merge. It never merges.
+
+To update an existing installation: replace the skill, and add the paragraph "A promise
+that changes" (section 3) and the auditor's new check (section 6) from
+templates/setup.md to your MANUAL.md.
+
 ## 1.2 (2026-11-13)
 
 ### Why this release exists

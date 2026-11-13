@@ -62,6 +62,14 @@ a date was given), done, closed_no_action. In messages to the owner, write these
 Key: stable and derived from the source, so nothing is added twice: <channel>-<source id>-<n>, for example
 mail-<threadId>-1, cal-<eventId>-1, inbox-<file name>-1. Before adding, grep index.tsv, items/ and archive/ for the
 source id and the counterparty; update in place.
+A promise that changes: when any source (a later meeting, message or call) carries a commitment, request or deadline
+about the same counterparty and the same subject as an open item, it belongs to that item, whatever the source id:
+(a) link it to that item and open no new item; (b) first append a Story line that gives both versions: what was
+promised before, what is promised now, the source and the date; (c) only then update "## Needed", the title and the
+deadline in index.tsv to the new version, so the old version always survives in the Story line. (d) If it is not
+certain that it is the same promise (the subject may differ, or the new terms may be an extra promise and not a
+change), merge nothing and overwrite nothing: keep or open both items, name each in the other's Story, and write one
+question that states both promises in full with the recommended answer. Both stay open until the owner answers.
 Late: an open item is late when its deadline has passed, or when its status is open, it has no deadline, and one full
 working day has passed since it first appeared (24 hours counted on working days only). It stays late until the owner says done, drop, or postpone with a date.
 tools/brief.py applies this rule.
@@ -136,7 +144,8 @@ reached for over 24 hours; contradictions between this manual and decisions.md; 
 step with the owner; files growing large (move closed index rows and answered questions older than 30 days to
 archive/); rule decisions that do not name their file, or whose file does not carry the rule; a rule written in two
 files (keep it in its home file and replace the other with a pointer); runs whose runs.log block has no end-of-run
-check, and every VIOLATION line since the last audit; lines in data/disposition.tsv left empty for more than one run,
+check, and every VIOLATION line since the last audit; open items with the same counterparty and an overlapping subject
+(raise each pair as one question with a proposal to merge; never merge them itself); lines in data/disposition.tsv left empty for more than one run,
 and a sample of 10 ignored lines read in full (one that needed the owner is a breach: open its item and report it). Fixes only what it is sure of, and logs each fix in improvements.md. Anything that needs the owner's decision
 becomes a proposal in improvements.md and a question. Never changes this manual. Sets last_audit to its start time, and
 sends the owner a short report, also when it found nothing.
