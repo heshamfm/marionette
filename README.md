@@ -8,7 +8,7 @@ turns every request and commitment into a tracked item, prepares reply drafts fo
 to review, and reminds you of what is late. Everything it remembers lives in plain
 files on your own computer.
 
-Version 1.0, 2026-11-11.
+Version 1.2, 2026-11-13.
 
 ## What you get
 

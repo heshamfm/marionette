@@ -22,6 +22,9 @@ the auditor reports when it grows large and proposes what moves out.
 Nothing the owner is asked for, promises, is promised, drafts or decides may be lost. Every such thing becomes an item.
 An item stays open until it is done, or the owner drops it and says why. Each run starts from the saved state and covers
 everything since the last successful check of each channel.
+Everything is tied to something: whatever Marionette reads, in any channel, ends with one line in data/disposition.tsv:
+linked to an item key, or ignored for a reason from the closed list in section 3. What has no disposition is shown to
+the owner in every message under "Read and not classified" until it gets one.
 
 ## 2. Where things are
 Root: {P} (in device_bash: {F}).
@@ -66,6 +69,17 @@ Next step with the owner: never close an item while its latest event puts the ne
 for that step first. A note in a file is not a reminder; only an open item reaches the owner.
 Working days: {DAYS}. Time zone: {TZ}.
 
+Dispositions: data/disposition.tsv has one line per source id (thread, event, meeting, chat, file), tab separated:
+source, source_id, date, sender, subject, disposition, key_or_reason, run. The line is written when the thing is first
+listed, with disposition empty; it is filled after the thing was read in full, and before its read state is changed or
+it is archived. disposition is "linked" (key_or_reason is an item key) or "ignored" (key_or_reason starts with one of:
+marketing, job_application, no_action_notice, duplicate:<item key>, rule:<words found in rules_by_subject.md or this
+manual>). Nothing else is a reason; what fits none stays empty so the owner sees it and decides the rule once. Money,
+a deadline, a paid invitation, a client message, a security alert or a needed decision is never ignored: it becomes an
+item in the same run and is named in that run's message with its deadline, and a deadline that falls before the next
+scheduled run is sent to the owner at once. A draft the owner sent that expects an answer keeps its item open as
+waiting on others. Every open item carries a deadline, or a line "next_check: YYYY-MM-DD" in its item file header.
+
 ## 4. The periodic run
 Times: {RUNS}.
 1. Lock: read state.json. If lock.holder is set and lock.since is under 10 minutes old, wait 2 minutes and retry up to
@@ -78,6 +92,8 @@ Times: {RUNS}.
    Never skip or shorten a channel to save time or usage. For every enabled channel this run does not read, add one
    line to view/run_skips.tsv: run start, channel, reason code, one plain sentence, separated by tabs. The only
    reason codes: tool_absent, page_failed, permission_refused, not_due, partly_read (say exactly what remains).
+   A list or a snippet is never a reading. Write a line in data/disposition.tsv for everything listed, and fill it
+   (section 3) before anything is marked read or archived.
 4. Update items: add new ones, update existing ones, close what is done. The owner's own actions count: sent mail,
    accepted invitations, meetings held. Threads where the owner wrote last may hold the owner's commitments.
 4b. Before any question reaches the owner: search the owner's sent mail for every person and subject in it since the
@@ -120,7 +136,8 @@ reached for over 24 hours; contradictions between this manual and decisions.md; 
 step with the owner; files growing large (move closed index rows and answered questions older than 30 days to
 archive/); rule decisions that do not name their file, or whose file does not carry the rule; a rule written in two
 files (keep it in its home file and replace the other with a pointer); runs whose runs.log block has no end-of-run
-check, and every VIOLATION line since the last audit. Fixes only what it is sure of, and logs each fix in improvements.md. Anything that needs the owner's decision
+check, and every VIOLATION line since the last audit; lines in data/disposition.tsv left empty for more than one run,
+and a sample of 10 ignored lines read in full (one that needed the owner is a breach: open its item and report it). Fixes only what it is sure of, and logs each fix in improvements.md. Anything that needs the owner's decision
 becomes a proposal in improvements.md and a question. Never changes this manual. Sets last_audit to its start time, and
 sends the owner a short report, also when it found nothing.
 
@@ -214,6 +231,7 @@ jobs.<id>.last_period records the last period done.
 - questions.md: `# Questions`, a blank line, `## Open`, a blank line, `## Answered`.
 - decisions.md: `# Decisions`, a blank line, then `- D1 | {DATE} | Marionette set up: folder {P}; periodic run {RUNS}; auditor {AUDITS}; channels {CHANNELS}; messages in {LANG} | owner, setup session`.
 - runs.log, improvements.md and view/run_skips.tsv: empty.
+- data/disposition.tsv: one header line, tab separated: `source	source_id	date	sender	subject	disposition	key_or_reason	run`
 - rules_by_subject.md: `# Rules by subject`, a blank line, then `One line per rule: - <subject> | <rule> | <decision>. Searched before any item, draft, reminder or report line about that subject.`
 
 ### tools/brief.py and tools/run_gate.py

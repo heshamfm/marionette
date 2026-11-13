@@ -15,6 +15,9 @@ Reason codes accepted: tool_absent, page_failed, permission_refused, not_due, pa
 Anything else, or no line at all, is printed as a VIOLATION and the exit code is 1.
 It also reports decisions marked as rules that do not name the file that carries them
 (a decision whose text starts with "RULE:" must contain "file: <name>").
+It also reads data/disposition.tsv, when it exists: every line with an empty disposition is listed under
+"Read and not classified", every invalid disposition is a VIOLATION, and open items with no deadline and no
+next_check date are counted and the oldest are named.
 The run copies this script's output, word for word, to the top of its message to the owner."""
 import os, re, sys, json, argparse
 
@@ -63,10 +66,69 @@ def check(root, start):
             m = re.match(r'- (D\d+) \| [\d-]+ \| *RULE:', line)
             if m and 'file:' not in line:
                 other.append(f'MISSING: rule decision {m.group(1)} does not name the file that carries it.')
+    unclassified, undated = dispositions(root, bad)
     out = [f'End-of-run check ({start}): {read} of {len(enabled)} enabled channels were read.'] + bad + noted + other
-    if not (bad or noted or other):
-        out.append('Every enabled channel was read, and nothing is missing.')
-    return out, (1 if bad else 0)
+    if unclassified:
+        out.append(f'Read and not classified ({len(unclassified)}):')
+        out += ['- ' + u for u in unclassified[:40]]
+        if len(unclassified) > 40:
+            out.append(f'- and {len(unclassified) - 40} more in data/disposition.tsv.')
+    if undated:
+        out.append(f'Open items with no deadline and no next_check date ({len(undated)}). Oldest:')
+        out += ['- ' + u for u in undated[:10]]
+    if not (bad or noted or other or unclassified or undated):
+        out.append('Every enabled channel was read, everything read is classified, and nothing is missing.')
+    return out, (1 if (bad or unclassified) else 0)
+
+
+CODES = ('marketing', 'job_application', 'no_action_notice', 'duplicate:', 'rule:')
+CLOSED = ('done', 'dropped', 'closed')
+
+
+def dispositions(root, bad):
+    """Return (unclassified lines, undated open items); append invalid dispositions to bad."""
+    keys, open_rows = set(), []
+    for rel in ('index.tsv', os.path.join('archive', 'index_archive.tsv')):
+        fp = os.path.join(root, rel)
+        if not os.path.exists(fp):
+            continue
+        for line in open(fp, encoding='utf-8').read().splitlines()[1:]:
+            c = line.split('\t')
+            if not c or not c[0]:
+                continue
+            keys.add(c[0])
+            if rel == 'index.tsv' and len(c) > 6 and c[1].strip().lower() not in CLOSED:
+                open_rows.append(c)
+    unclassified = []
+    reg = os.path.join(root, 'data', 'disposition.tsv')
+    if os.path.exists(reg):
+        for line in open(reg, encoding='utf-8').read().splitlines()[1:]:
+            c = [x.strip() for x in (line.split('\t') + [''] * 8)[:8]]
+            sid, date, sender, subj, disp, kr = c[1], c[2], c[3], c[4], c[5], c[6]
+            if not sid:
+                continue
+            who = f'{sender}, "{subj}" ({date[:10]})'
+            if not disp:
+                unclassified.append(who)
+            elif disp == 'linked':
+                if kr not in keys:
+                    bad.append(f'VIOLATION: {who} is linked to an item that does not exist ("{kr}").')
+            elif disp == 'ignored':
+                if not kr.startswith(CODES):
+                    bad.append(f'VIOLATION: {who} is ignored for a reason outside the closed list ("{kr}").')
+            else:
+                bad.append(f'VIOLATION: {who} has an unknown disposition ("{disp}").')
+    undated = []
+    for c in open_rows:
+        if re.match(r'\d{4}-\d\d-\d\d', c[3] or ''):
+            continue
+        ip = os.path.join(root, 'items', c[0] + '.md')
+        head = open(ip, encoding='utf-8').read().split('## ')[0] if os.path.exists(ip) else ''
+        if re.search(r'(?m)^next_check: *\d{4}-\d\d-\d\d', head):
+            continue
+        undated.append(f'{c[6]} (last event {(c[7] if len(c) > 7 else "")[:10]})')
+    undated.sort(key=lambda u: u[-11:])
+    return unclassified, undated
 
 
 if __name__ == '__main__':

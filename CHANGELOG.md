@@ -1,5 +1,46 @@
 # Changelog
 
+## 1.2 (2026-11-13)
+
+### Why this release exists
+
+A paid survey invitation with a same-day bonus reached the author's mailbox. A scheduled
+run read the message in full, labelled it, marked it read, archived it, and told the
+owner nothing. The reminder the next day went the same way. The owner found out two days
+later, when he asked why nothing had come of it.
+
+Two things had gone wrong, and neither was a reading problem:
+
+- A quick housekeeping step archived that kind of mail first and was told to stay
+  "light", so the part of the rule that said "report what needs the owner" was never
+  reached. Reading a message is not handling it.
+- When the owner sent his reply to the invitation, no item was opened to wait for the
+  answer. So when the answer came, nothing connected it to an open matter.
+
+A check of the inbox the same week found three more messages that runs had read and
+never tied to anything.
+
+### What changed
+
+- Everything is tied to something. Whatever a run reads ends with one line in
+  data/disposition.tsv: linked to an item, or ignored for a reason from a short closed
+  list. What has neither is shown to the owner in every message until it is classified.
+- Record first, archive last. Nothing is marked read, labelled or archived before its
+  disposition is written.
+- Money, a deadline, a paid invitation, a client message, a security alert or a needed
+  decision always becomes an item in the same run and is named in that run's message
+  with its deadline. A deadline before the next scheduled run is sent at once.
+- A draft the owner sends that expects an answer keeps an item open as waiting on others.
+- Every open item carries a deadline or a next_check date.
+- The end-of-run check (templates/run_gate.py) now lists what was read and not
+  classified, rejects invalid dispositions, and names open items with no date.
+- The auditor samples the ignored lines and reads them in full.
+
+To update an existing installation: replace the skill, copy templates/run_gate.py to
+tools/run_gate.py, create data/disposition.tsv with the header line from
+templates/setup.md, and add the paragraphs "Everything is tied to something" (section 1)
+and "Dispositions" (section 3) from templates/setup.md to your MANUAL.md.
+
 ## 1.1 (2026-11-11)
 
 ### Why this release exists

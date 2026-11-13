@@ -52,6 +52,33 @@ def test_rule_decision_must_name_file():
     assert code == 0 and any('rule decision D2' in l for l in out) and not any('D3' in l for l in out), out
 
 
+def test_dispositions_and_undated():
+    d = make({'mail': START, 'spam': START, 'chat': START, 'portal': START})
+    os.makedirs(os.path.join(d, 'data')); os.makedirs(os.path.join(d, 'items'))
+    open(os.path.join(d, 'index.tsv'), 'w').write(
+        'key\tstatus\ttype\tdeadline\trecord\tcounterparty\ttitle\tlast_event\n'
+        'mail-a-1\topen\treply\t2026-11-20\t\tx\tDated item\t2026-11-10 10:00\n'
+        'mail-b-1\twaiting\treply\t\t\tx\tUndated item\t2026-11-09 10:00\n'
+        'mail-c-1\twaiting\treply\t\t\tx\tHas next check\t2026-11-09 10:00\n'
+        'mail-d-1\tdone\treply\t\t\tx\tClosed item\t2026-11-09 10:00\n')
+    open(os.path.join(d, 'items', 'mail-c-1.md'), 'w').write('# x\nkey: mail-c-1\nnext_check: 2026-11-17\n\n## Story\n')
+    open(os.path.join(d, 'data', 'disposition.tsv'), 'w').write(
+        'source\tsource_id\tdate\tsender\tsubject\tdisposition\tkey_or_reason\trun\n'
+        'mail\tt1\t2026-11-10\tA\tLinked ok\tlinked\tmail-a-1\t' + START + '\n'
+        'mail\tt2\t2026-11-10\tB\tPaid survey, same day\t\t\t' + START + '\n'
+        'mail\tt3\t2026-11-10\tC\tNewsletter\tignored\tmarketing\t' + START + '\n'
+        'mail\tt4\t2026-11-10\tD\tBad reason\tignored\tnot important\t' + START + '\n'
+        'mail\tt5\t2026-11-10\tE\tBad key\tlinked\tmail-zzz-1\t' + START + '\n')
+    out, code = run_gate.check(d, START)
+    text = '\n'.join(out)
+    assert code == 1, out
+    assert 'Read and not classified (1):' in text and 'Paid survey, same day' in text, out
+    assert 'outside the closed list ("not important")' in text, out
+    assert 'does not exist ("mail-zzz-1")' in text, out
+    assert 'no next_check date (1)' in text and 'Undated item' in text and 'Has next check' not in text, out
+    assert 'Newsletter' not in text and 'Closed item' not in text, out
+
+
 if __name__ == '__main__':
     for name, fn in sorted(globals().items()):
         if name.startswith('test_'):
