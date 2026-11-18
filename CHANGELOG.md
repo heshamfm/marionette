@@ -1,5 +1,73 @@
 # Changelog
 
+## 1.5 (2026-11-18)
+
+### Why this release exists
+
+Version 1.4 was incomplete, and should not have been published as it was. It taught the
+skill how to behave when an installation keeps its memory in a database, but it did not
+include the database program, and it offered no way to move an existing installation to
+it. Its changelog said so in one line, but that was not enough: anyone reading "adds
+installations that keep their memory in a database" would expect to be able to use one.
+Nobody outside the author's own installation could. This release ships what 1.4
+promised.
+
+### What changed
+
+- The database programs are now in `marionette/templates/db/`:
+  - `mdb.py`, the only program that writes the memory. It checks who may do each action
+    (the owner, Claude or the program), refuses with a reason, records every change in a
+    history that cannot be changed or deleted, and never deletes anything. An action in
+    the owner's name needs the owner's own words, quoted from a session.
+  - `mrun.py`, what every run and session uses: the brief, the status page, the
+    end-of-run check, and one command for each thing a run records.
+  - `schema_v0.1.sql` and `seed_v0.1.py`: the tables, the types of things and the
+    permission rules.
+  - `db_usage.md`: for each step the files version did by editing a file, the command
+    that does it now.
+  - `doors/`: `brief.py`, `run_gate.py` and `build_status.py` keep their names and
+    commands, and read the database.
+  - `migrate.py`: the move from files to the database.
+- The owner's settings are no longer fixed in the programs: time zone, working days,
+  the first day of the week (used for weekly jobs) and the language of the brief, status
+  page and end-of-run check (English or Arabic) come from `state.json` when the database
+  is created.
+- Setup creates new installations on the database (step 4b). If Python 3.9 or later
+  with `sqlite3` is missing, it stays on files and can move later.
+- The move has two steps. The check changes nothing in the installation and reports
+  what it found and carried over, what does not fit, and every choice it made. The apply
+  runs only after the owner approves, refuses while a run holds the lock or while
+  anything does not fit, moves the old files unchanged into `archive/before_db_<date>/`,
+  and leaves a read-only note at each old path. `--undo` puts the files back; nothing
+  is deleted in either direction.
+- The move never guesses: a type or status in the owner's own words is given its
+  meaning with `--map`, and a job schedule it cannot read must be rewritten in a fixed
+  form. Choices it does make (for example, a reminder with no date becomes due at the
+  moment of the move, so it is shown at once, as before) are listed in the report.
+- Two new tests: `tests/test_db_door.py` and `tests/test_db_move.py`.
+- Files that a test run had created by mistake (`__pycache__`) were removed from the
+  repository, and a `.gitignore` keeps them out.
+
+### How it was tested
+
+- The 204 checks of the database program, and 51 checks of the move: a check that
+  changes nothing, an apply, an undo and a second move, the refusals, a new Arabic
+  installation with a Sunday-to-Thursday week, and the brief, status page and
+  end-of-run check after the move.
+- A check, apply and undo on a copy of the author's own installation from before its
+  move: 393 items, 524 reading lines, 48 drafts, 42 reminders, 8 questions and 11 jobs.
+  Every item, draft, question and reminder was carried over. The trial found two faults,
+  both fixed before release: the same email thread listed twice in the reading register
+  was refused the second time (it is now recorded once), and a loose reading of job
+  schedules read "Sun-Thu 07:30" as a weekly job on Thursday (schedules are now read
+  strictly, and anything else is reported, not guessed).
+
+### What did not change
+
+The rules: what becomes an item, the late rule, the closed list of reasons to ignore
+something, the limits on sending and deleting. Installations that have not moved keep
+working on files exactly as before.
+
 ## 1.4 (2026-11-18)
 
 ### Why this release exists

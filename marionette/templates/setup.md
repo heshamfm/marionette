@@ -28,6 +28,11 @@ the owner in every message under "Read and not classified" until it gets one.
 
 ## 2. Where things are
 Root: {P} (in device_bash: {F}).
+- db/marionette.db: the memory, when tools/db_usage.md exists (what Setup creates since Marionette 1.5). The items,
+  drafts, questions, reminders, reading register, watermarks and the lock are then kept in the database, and
+  tools/db_usage.md says how to read and write each one. The descriptions of index.tsv, items/, drafts.tsv,
+  data/drafts/, questions.md, reminders/, data/disposition.tsv and the lock below say what each holds; in the
+  database the same things are kept, and only the way of writing them changes.
 - MANUAL.md: this file. channels.md: the channels and how to read each. jobs.md and jobs/: fixed-time jobs.
 - rules_by_subject.md: rules about one person, client, sender or desk, one line each: "- <subject, with every name
   and address it goes by> | <rule> | <decision>". Search it (by name, company and email domain) before any item,

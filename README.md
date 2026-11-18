@@ -5,15 +5,20 @@ nothing you are asked for, promise, are promised, draft or decide gets lost.
 
 It reads your email, calendar, meeting notes and other connected tools on a schedule,
 turns every request and commitment into a tracked item, prepares reply drafts for you
-to review, and reminds you of what is late. Everything it remembers lives in plain
-files on your own computer.
+to review, and reminds you of what is late. Everything it remembers lives on your own computer, in one
+database file (SQLite) with a few plain files beside it.
 
-Version 1.4, 2026-11-18.
+Version 1.5, 2026-11-18.
 
 ## What you get
 
 - The skill folder `marionette/`: the skill itself (`SKILL.md`) and the setup
   templates it reads only on first use (`templates/`).
+- The database programs (`marionette/templates/db/`): one program that is the only way
+  to write the memory, checks who may do what, refuses with a reason, and records every
+  change in a history that is never changed or deleted. Nothing is ever deleted.
+- A move tool (`marionette/templates/db/migrate.py`) for installations set up before
+  version 1.5, which keep their memory in files. See "Moving from files to the database".
 - A small check that runs at the end of every scheduled run and tells you, at the top
   of the run's message, which of your channels were not read and why.
 - On first use, Marionette sets itself up: it creates its folders and starter files on
@@ -42,8 +47,44 @@ go to step 4.
   connected in your own Claude account.
 - Your computer switched on at the scheduled times. A missed run is covered by the
   next one.
-- Python 3.9 or later on your computer, for the small script that lists what is late.
-  Without it Marionette still works, but reads more on every run.
+- Python 3.9 or later on your computer, with its standard `sqlite3` module (part of
+  every normal Python installation). The database needs it. Without it Marionette sets
+  itself up on plain files and can move to the database later.
+
+## Moving from files to the database
+
+If you set Marionette up before version 1.5, it keeps its memory in plain files, and it
+keeps working that way. To move, install version 1.5 of the skill, invoke Marionette and
+say you want to move to the database. Claude then:
+
+1. Copies the database programs to your computer.
+2. Runs a check that changes nothing in your installation. It builds a trial database
+   and reports, in plain words, how many items, drafts, questions, reminders, jobs and
+   reading lines it found and carried over (each pair of numbers must match), anything
+   that does not fit, and every choice it had to make.
+3. Fixes what does not fit with you. Usually that is a word of your own for a type or a
+   status (you say what it means), or a job schedule the program cannot read (you write
+   it in a fixed form, for example `{"every": "day", "at": "07:30"}`). The program never
+   guesses a meaning.
+4. Moves, only after you approve the report. Your old files are moved unchanged into
+   `archive/before_db_<date>/`, and a read-only note stays at each old path. Nothing is
+   deleted.
+5. Checks that the brief now comes from the database.
+
+If you want to go back, ask Claude to undo the move. The files return as they were, the
+database is moved aside (not deleted), and you are told how many changes were recorded
+in the database after the move, because those are not written back into the files.
+
+Your scheduled tasks need no change: they use the skill, and the skill reads the
+database once it exists.
+
+You can also run the move yourself, from your `followup` folder:
+
+```
+python3 tools/db_install/migrate.py --followup . --approval "<your words agreeing>" --session-file sessions/<file>.md
+python3 tools/db_install/migrate.py --followup . --approval "<your words agreeing>" --session-file sessions/<file>.md --apply
+python3 tools/migrate.py --followup . --undo
+```
 
 ## Usage and cost
 
@@ -87,8 +128,10 @@ A decision that is a rule is not finished until it names the file that carries i
 
 ## Status
 
-Marionette is in daily use by its author. Setup by other users has not been tested
-yet.
+Marionette is in daily use by its author, whose installation runs on the database.
+The move tool was tested on synthetic installations and on a copy of a real installation
+with about 400 items, 500 reading lines, 50 drafts and 40 reminders (the trial is
+described in `CHANGELOG.md`). Setup by other users has not been tested yet.
 
 ## Questions and problems
 
@@ -119,6 +162,11 @@ private installation it is the author's request.
 
 ## Tests
 
-`python3 tests/test_brief.py` checks the late rule in `marionette/templates/brief.py`.
-`python3 tests/test_run_gate.py` checks the end-of-run check in
-`marionette/templates/run_gate.py`.
+Run each from the repository root:
+
+- `python3 tests/test_db_door.py`: the database program: permissions, refusals, the
+  history of changes, jobs and periods, the late rule (204 checks).
+- `python3 tests/test_db_move.py`: the move from files to the database, the undo, a new
+  installation, and the run tools after the move (51 checks).
+- `python3 tests/test_brief.py` and `python3 tests/test_run_gate.py`: the files
+  version of the brief and of the end-of-run check, for installations not yet moved.
