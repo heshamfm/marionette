@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.4 (2026-11-18)
+
+### Why this release exists
+
+The owner's own installation moved its memory from plain files to a single database
+file, with one program that every run and session must write through. The skill still
+described only the files. A session that followed the skill to the letter would have
+tried to write an item, a draft or a question into files that are now read-only, and
+what was agreed in that session would not have been saved.
+
+### What changed
+
+- A new short section, "Where the memory is kept". An installation keeps its memory in
+  plain files (still the default that Setup creates) or in a database.
+- When the installation holds `tools/db_usage.md`, the memory is the database that file
+  names, and every read and write goes through the program it names. The old files
+  (items, index, drafts, questions, reminders, the reading register, and the watermarks
+  and lock in `state.json`) become read-only history.
+- Wherever the skill names one of those files, the same step is done through the
+  database instead. If the program refuses an action, its reason is followed; nothing
+  is written around it.
+
+### What did not change
+
+Installations that keep their memory in files work exactly as before. Setup still
+creates files. The database program itself is not part of this repository.
+
 ## 1.3 (2026-11-13)
 
 ### Why this release exists
