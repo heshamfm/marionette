@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.6 (2026-11-20)
+
+### Why this release exists
+
+Two problems happened in the author's own installation after 1.5 was published, and both
+can happen in any installation.
+
+1. Two sessions drafted the same meeting follow-up 4 minutes apart. Each one checked for
+   an existing draft, found none, and created its own. A check before creating a draft is
+   not enough when two sessions check at the same moment.
+2. A scheduled run left a channel unread and gave "not enough time" as its reason. The
+   end-of-run check accepted it, because the reason code looked valid. A channel that is
+   left unread to save time is exactly the kind of gap Marionette exists to prevent.
+
+### What changed
+
+- `SKILL.md`: before creating any mail draft, the session checks existing drafts (whoever
+  made them), sent mail, the thread and the inbox for the same purpose. Right after
+  creating a draft, it lists the drafts again; if another draft for the same purpose has
+  an earlier draft id, it discards its own new draft at once and says so. The check after
+  creating is what leaves only one draft.
+- `templates/db/mrun.py`: `skip` refuses any reason that rests on time, length or
+  consumption (in English or Arabic). A run may leave a channel unread only for a real
+  reason: the tool is missing, the page did not open, permission was refused, the channel
+  is not due yet, or it was read in part with what remains named.
+
+### Upgrading
+
+Replace the skill folder with this one. For an installation already on the database, copy
+`marionette/templates/db/mrun.py` over `followup/tools/mrun.py`. Nothing else changes and
+nothing in the database is touched.
+
 ## 1.5 (2026-11-18)
 
 ### Why this release exists

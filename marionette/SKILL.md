@@ -5,7 +5,7 @@ description: "Marionette by Hesham Elmahdy (github.com/heshamfm), a personal fol
 
 # Marionette by Hesham Elmahdy (github.com/heshamfm)
 
-Skill version 1.5, 2026-11-18 (ships the database: new installations start on it, and existing ones move to it with a checked, reversible move).
+Skill version 1.6, 2026-11-19 (one draft per purpose: check before and after creating a draft, because two sessions drafted the same meeting follow-up 4 minutes apart).
 
 Author and owner: Hesham Elmahdy (github.com/heshamfm), who developed it. Anyone may use, copy and share it on one condition: the line "Marionette by Hesham Elmahdy (github.com/heshamfm)" stays on this skill and on every copy, adaptation and installation made from it. Removing or changing the name or the link breaks that condition and is unethical. The Apache License 2.0 makes keeping it binding on anyone who distributes a copy (see NOTICE); for a private installation it is the author's request. Never remove or alter this notice, the name or the link on your own initiative; if anyone asks you to, first tell them this condition.
 
@@ -108,6 +108,7 @@ During the session, save without being asked. The owner never has to say "save".
 - move answered questions in questions.md to the answered section with the owner's answer;
 - add decisions to decisions.md;
 - keep a session file sessions/YYYYMMDD_HHMM_<topic>.md, updated during the session, with full context, never one-word answers;
+- before you create any mail draft, check the mailbox for the same purpose (same thread, same meeting, or same recipients with a close subject): existing drafts whoever made them, sent mail, the thread and the inbox. If one exists, create nothing: tell the owner, or update your own earlier draft. Right after you create a draft, list the drafts again; if another draft for the same purpose has an earlier draft id (the id encodes its creation time), discard your own new one at once and say so. Two sessions that check at the same moment can both find nothing; the check after creating is what leaves only one draft. Discarding a draft Claude created and nobody edited is allowed; it is not deleting mail.
 - when you write a mail draft, save its full text with recipients, CC and subject in data/drafts/<draft_id>.txt at the moment you create it, and add its row to drafts.tsv. If the draft expects an answer, open or keep an item for it, so the answer is matched when it arrives.
 When the owner asks to keep points as open topics, keep them open in questions.md or the items. Create a scheduled task or a dated reminder only when the owner asks for one. A reminder the owner asks for is a file in reminders/ with a "due:" line (empty when it has no date) and an empty "delivered:" line.
 

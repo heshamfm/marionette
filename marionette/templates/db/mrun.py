@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Marionette by Hesham Elmahdy (github.com/heshamfm): the run-time layer, version 1.5.
+"""Marionette by Hesham Elmahdy (github.com/heshamfm): the run-time layer, version 1.6.
 
 What the scheduled runs and the sessions use in an installation that keeps its memory in the database,
 instead of editing the files (index.tsv, items/, drafts.tsv, questions.md, reminders/, data/disposition.tsv,
@@ -545,6 +545,11 @@ class Run:
 
     def skip(self, run, channel, code, text):
         self.channel_id(channel)
+        # Time, length or consumption is never a reason to leave a channel unread (added in 1.6).
+        if re.search(r'(ضيق الوقت|الوقت|وقت|توفير|استهلاك|اختصار|\btime\b|\bsave\b|consumption|usage|tokens?|too long|shorten)',
+                     text or '', re.I):
+            raise mdb.Refused('a skip never rests on time, length or consumption; read the channel, or name the tool '
+                              'failure, page failure, refused permission or what remains unread and why')
         return self.do('note_skip', 'claude', run, params={'channel': channel, 'code': code, 'text': text})
 
     def watermark(self, run, channel, at):

@@ -186,6 +186,9 @@ try:
     check('the end-of-run check flags channels left unread', rc == 1 and 'without an accepted reason' in out, out)
     run([os.path.join(F, 'tools', 'mrun.py'), 'watermark', '--run', R, '--channel', 'mail', '--at', '2026-11-18 10:00'],
         cwd=F)
+    rc, out, err = run([os.path.join(F, 'tools', 'mrun.py'), 'skip', '--run', R, '--channel', 'calendar', '--code',
+                        'partly_read', '--text', 'Stopped early to save time.'], cwd=F)
+    check('a skip that rests on time is refused', rc == 2 and 'time, length or consumption' in str(out), (out, err))
     run([os.path.join(F, 'tools', 'mrun.py'), 'skip', '--run', R, '--channel', 'calendar', '--code', 'tool_absent',
          '--text', 'The calendar tool was not loaded.'], cwd=F)
     rc, out, err = run([os.path.join(F, 'tools', 'run_gate.py'), '--run', R], cwd=F)

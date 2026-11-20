@@ -8,7 +8,7 @@ turns every request and commitment into a tracked item, prepares reply drafts fo
 to review, and reminds you of what is late. Everything it remembers lives on your own computer, in one
 database file (SQLite) with a few plain files beside it.
 
-Version 1.5, 2026-11-18.
+Version 1.6, 2026-11-20.
 
 ## What you get
 
