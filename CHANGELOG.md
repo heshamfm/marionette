@@ -1,5 +1,87 @@
 # Changelog
 
+## 1.7 (2026-11-22)
+
+### Why this release exists
+
+Four problems were found in the author's installation on 21 and 22 November 2026. Three of them
+can happen in any installation, and one more problem sat behind all of them: until now a fix
+reached only new installations. Every earlier "Upgrading" note asked the owner to copy files by
+hand, and none could repair data the old programs had left wrong.
+
+1. **An item handed over still looked like the owner's.** The owner sent a contract to a colleague
+   for review, and the run recorded the hand-over. Two days later the run's message listed the same
+   contract under "waiting for you, due today". The hand-over had changed only who holds the next
+   step: the title still said "asks you to review", the type still read "reply needed from me", and
+   the old date stayed. The message was built from the date, not from who holds the step.
+2. **Checks that came were never done.** Of 138 open items, 84 had a next check in the past, most
+   of them five days old, and 12 had no date at all. Every brief marked them "CHECK DUE", but no
+   step said what a run does then, so nothing happened, and items waiting on other people were
+   never chased.
+3. **A problem reported was saved in a shorter text than the one shown.** The owner asked a session
+   to report two problems to the auditor. The session saved a short description and showed the
+   owner a much longer text "ready to copy". Nothing made the saved text complete, nothing let a
+   session add to an issue, and nothing said that what the owner is shown as saved must be what is
+   saved. The issues register itself existed only in the author's installation.
+4. **A rule was carried out with a condition its owner never stated.** (Specific to the author's
+   rules, so not published as a rule; the general lesson is.) A spam rule was implemented with an
+   extra precondition the owner had not said, and a real case slipped through it.
+
+### What changed
+
+- **Upgrade for installations already in use** (`templates/db/upgrade.py`, new). `--check` reports,
+  file by file, what would change and changes nothing. `--apply` copies the database and programs
+  first into `archive/upgrade_<from>_to_<to>_<time>/`, replaces only the program files that are
+  exactly a published copy (a file the owner changed is kept, and the new one put beside it as
+  `<name>.new-<release>`; if one of the core programs that only work together was changed, it changes
+  nothing and the owner decides), adds new types and permission lines without removing or changing any,
+  applies the data fixes of each release in order through the database program (so each one is in
+  the history of changes), and records the release in the database (`meta marionette_version`),
+  `state.json` and `runs.log`. `--undo` puts everything back and moves the upgraded database aside.
+  It refuses while another run is writing (`--run R` names the caller's own run). If it stops half way,
+  it says so, and `--undo` puts back the copy taken before it. The skill runs it at the start of any session or run that
+  finds an older installation, and tells the owner what changed and how to undo it.
+  `mrun.py version` prints the release.
+- **Hand-over** (`mdb.py`): handing an item over now requires its new title (written for the new
+  holder) and its dates in the same action. "Reply needed" and "decision needed" name the holder
+  when it is not the owner. The brief has a section ON THE USER, the only list a message may show
+  as waiting for the owner. The status page says who holds each late item. Items can be renamed
+  (`act --action rename`) with the source that changed the title.
+- **Dates and checks due** (`mdb.py`, `mrun.py`): an open item can no longer lose its last date, and a
+  conversion or a reopening cannot leave one without a date.
+  The brief lists every check that came (CHECKS DUE). The end-of-run check now names, as a
+  violation, every check the run left unhandled (handled = anything the run recorded on the item) and
+  every open item with no date. A story line is now written to the history of changes with its run,
+  like every other change. The move from
+  files gives undated items a next check on the day after the move, and the upgrade does the same
+  for existing databases.
+- **Issues register** (`mrun.py`, `seed_v0.1.py`): a new type, issue (reported, in progress,
+  resolved), for problems in how Marionette itself works. `issue-new` takes the parts of one fixed
+  template (what happened; what was found, quoting the sources; the owner's words, required when
+  the owner reported it; what is asked) and builds the text itself, always adding the step "find
+  the similar cases and fix them all"; it refuses a missing part. `issue-append` adds text word for
+  word; `issue` prints an issue exactly as stored; `issues` lists them; the brief shows the open ones.
+- **The undo of the move from files** counts the changes made after the move by the last change of
+  the move, not by time: two changes in the same second were missed.
+- **A source read in part can be read in full later** (`mrun.py record --read`): fixed earlier in
+  the author's installation and not published until now.
+- **Rules** (`SKILL.md`, `templates/setup.md` for new installations, `templates/db/upgrades/1.7.md`
+  proposed to existing owners): who holds the next step decides what waits for the owner; a
+  hand-over rewrites the item; every check that comes is handled that day; what the owner is shown
+  as saved is printed from where it is saved; problems go to the issues register in its template;
+  a rule is carried out in the owner's words, with no condition added.
+- **Project**: tests for all of the above, including an upgrade of a real 1.6 installation rebuilt
+  from this repository's history (`tests/test_release_1_7.py`); the tests run on every push on
+  Python 3.9 to 3.13; `CONTRIBUTING.md`; an issue template.
+
+### Upgrading
+
+Replace the skill folder with this one. The next session or scheduled run finds the installation
+older than 1.7 and upgrades it as described above, then shows the owner the rules proposed for the
+manual. Nothing is lost: everything is copied first, and `upgrade.py --undo` goes back. An
+installation still on files is not touched; it moves to the database as before, and the move now
+includes these changes.
+
 ## 1.6 (2026-11-20)
 
 ### Why this release exists

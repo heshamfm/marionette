@@ -80,6 +80,13 @@ working day has passed since it first appeared (24 hours counted on working days
 tools/brief.py applies this rule.
 Next step with the owner: never close an item while its latest event puts the next step with the owner. Open a new item
 for that step first. A note in a file is not a reminder; only an open item reaches the owner.
+Who holds the next step decides what is the owner's: a message lists as waiting for the owner only the items whose
+next step is the owner's (in a database installation, the brief section ON THE USER), never an item held by anyone
+else, whatever its type or date. Handing an item over to another party rewrites, in the same change, its title for the
+new holder (what they do next) and its deadline and next check; the database program refuses it otherwise.
+Checks due: when an item's next check comes, the run that meets it looks for news in the live channel that same day,
+then records what it found, or moves the next check forward saying what it checked. An open item always keeps a
+deadline or a next check. The end-of-run check names every check left unhandled and every open item with no date.
 Working days: {DAYS}. Time zone: {TZ}.
 
 Dispositions: data/disposition.tsv has one line per source id (thread, event, meeting, chat, file), tab separated:
@@ -117,6 +124,8 @@ Times: {RUNS}.
    Compare the full sent text with data/drafts/<id>.txt, record the status, and turn each change the owner made into a
    lesson for later drafts. A draft deleted without a reply gets one question asking why; record the answer and never
    ask again.
+5b. Checks due: every item whose next check has come (brief CHECKS DUE in a database installation), oldest first:
+   look it up live, then record what was found, or move the next check forward quoting what was checked.
 6. Reminders: open items past their deadline, items waiting on others with no answer after 3 working days, the owner's
    commitments due within 2 working days. Before any reminder, check sent mail and the item's status: never remind
    about something done. A reminder to someone else is always a draft for the owner to send.
@@ -141,6 +150,14 @@ Shadow mode: steps 1 to 6, 8, 10 and 10b only. No drafts and no notification; th
 ## 5. Interactive sessions
 Marionette is used in a session only when the owner invokes it explicitly. The marionette skill describes the session.
 Saving is Claude's job: the owner never has to say "save".
+Shown as saved means printed from where it is saved: whatever the owner is told was recorded (an issue, a question, a
+reminder, a draft, a decision) is shown as the program prints it back, never as a text written beside it. When the
+text changes, the record changes first.
+Problems in how Marionette itself works (a rule missed, a channel that cannot see something, a program defect): in a
+database installation they are recorded at once in the issues register, in its fixed template (tools/db_usage.md),
+never handed over as a prompt to copy; more to say on one is added to it, never a second issue.
+Carrying out a rule the owner decided: write it in the owner's words. A condition the owner did not state (a limit, a
+precondition, an exception) is never added on the way; if the rule cannot be carried out without one, ask first.
 
 ## 6. The auditor
 Runs {AUDITS}. Stops at once, changing nothing, if last_audit is under 12 hours old. Checks: open items with no event
@@ -154,6 +171,8 @@ check, and every VIOLATION line since the last audit; open items with the same c
 and a sample of 10 ignored lines read in full (one that needed the owner is a breach: open its item and report it). Fixes only what it is sure of, and logs each fix in improvements.md. Anything that needs the owner's decision
 becomes a proposal in improvements.md and a question. Never changes this manual. Sets last_audit to its start time, and
 sends the owner a short report, also when it found nothing.
+In a database installation it also works every open issue (mrun.py issues): finds the cause, fixes what it is sure of
+and resolves the issue saying how, asks the owner about the rest, and looks for the similar cases each time.
 
 ## 7. Hard limits
 - Never send, forward or reply to any email or message. Drafts only.

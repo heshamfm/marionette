@@ -8,7 +8,7 @@ turns every request and commitment into a tracked item, prepares reply drafts fo
 to review, and reminds you of what is late. Everything it remembers lives on your own computer, in one
 database file (SQLite) with a few plain files beside it.
 
-Version 1.6, 2026-11-20.
+Version 1.7, 2026-11-22. What changed and why: `CHANGELOG.md`.
 
 ## What you get
 
@@ -19,6 +19,8 @@ Version 1.6, 2026-11-20.
   change in a history that is never changed or deleted. Nothing is ever deleted.
 - A move tool (`marionette/templates/db/migrate.py`) for installations set up before
   version 1.5, which keep their memory in files. See "Moving from files to the database".
+- An upgrade tool (`marionette/templates/db/upgrade.py`) that brings an installation already
+  in use up to each new release, with a full copy first and an undo. See "Upgrading".
 - A small check that runs at the end of every scheduled run and tells you, at the top
   of the run's message, which of your channels were not read and why.
 - On first use, Marionette sets itself up: it creates its folders and starter files on
@@ -86,6 +88,36 @@ python3 tools/db_install/migrate.py --followup . --approval "<your words agreein
 python3 tools/migrate.py --followup . --undo
 ```
 
+## Upgrading
+
+Every release fixes something that went wrong in a real installation, so an installation
+already in use gets the fix too, not only new ones. Replace the skill with the new version
+(the same steps as installing). The next time Marionette runs, in a session or on its
+schedule, it sees that your installation is older and upgrades it:
+
+1. A check that changes nothing lists, file by file, what will be replaced, and what will
+   change in the database.
+2. A full copy of your database and programs is taken into
+   `archive/upgrade_<from>_to_<to>_<time>/`.
+3. Only the program files that are exactly as published are replaced. A file you or a
+   session changed is never overwritten: the new version is put beside it as
+   `<name>.new-<release>`, and you are told, so you decide.
+4. New types and permission lines are added (none is removed or changed), and the data
+   fixes of the release are applied, each recorded in the history of changes.
+5. You are told what changed and why. Rules the release suggests for your own manual are
+   shown to you and added only if you agree: your manual is yours.
+
+To go back: `python3 tools/db_install/upgrade.py --followup . --undo`, from your
+`followup` folder. The database as it was after the upgrade is moved aside, not deleted.
+
+You can also run it yourself, from your `followup` folder, after copying
+`marionette/templates/db/` (with `doors/` and `upgrades/`) to `tools/db_install/`:
+
+```
+python3 tools/db_install/upgrade.py --followup . --check
+python3 tools/db_install/upgrade.py --followup . --apply
+```
+
 ## Usage and cost
 
 On each scheduled run Marionette reads all your mail since its last check, every
@@ -129,6 +161,9 @@ A decision that is a rule is not finished until it names the file that carries i
 ## Status
 
 Marionette is in daily use by its author, whose installation runs on the database.
+The 1.7 changes were applied first to the author's installation and checked on a copy of
+its database (about 450 items) before release; the upgrade tool was tested on a real 1.6
+installation built from this repository's history.
 The move tool was tested on synthetic installations and on a copy of a real installation
 with about 400 items, 500 reading lines, 50 drafts and 40 reminders (the trial is
 described in `CHANGELOG.md`). Setup by other users has not been tested yet.
@@ -165,8 +200,16 @@ private installation it is the author's request.
 Run each from the repository root:
 
 - `python3 tests/test_db_door.py`: the database program: permissions, refusals, the
-  history of changes, jobs and periods, the late rule (204 checks).
+  history of changes, jobs and periods, the late rule (207 checks).
 - `python3 tests/test_db_move.py`: the move from files to the database, the undo, a new
-  installation, and the run tools after the move (51 checks).
+  installation, and the run tools after the move (52 checks).
+- `python3 tests/test_release_1_7.py`: what 1.7 changed (hand-over, dates, checks due,
+  issues), and the upgrade of a real 1.6 installation: check, apply, a file changed by
+  its owner kept, a changed core program, a run writing, an upgrade stopped half way, a second
+  apply, undo, and apply again (55 checks; the upgrade part needs
+  the git history).
 - `python3 tests/test_brief.py` and `python3 tests/test_run_gate.py`: the files
   version of the brief and of the end-of-run check, for installations not yet moved.
+
+Every push and pull request runs all of them on Python 3.9 to 3.13
+(`.github/workflows/tests.yml`). See `CONTRIBUTING.md` before proposing a change.

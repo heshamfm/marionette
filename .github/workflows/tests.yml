@@ -1,0 +1,29 @@
+name: tests
+on:
+  push:
+  pull_request:
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.9', '3.10', '3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the upgrade tests rebuild a 1.6 installation from the history
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install tzdata
+      - name: database program
+        run: python3 tests/test_db_door.py
+      - name: move from files
+        run: python3 tests/test_db_move.py
+      - name: release 1.7 and the upgrade
+        run: python3 tests/test_release_1_7.py
+      - name: files version
+        run: |
+          python3 tests/test_brief.py
+          python3 tests/test_run_gate.py
