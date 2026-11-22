@@ -1,6 +1,6 @@
 """Marionette by Hesham Elmahdy (github.com/heshamfm): starting data of the database, schema 0.1.
 
-Holds the 4 groups, the 22 types with their statuses, and who may do each
+Holds the 4 groups, the 23 types with their statuses, and who may do each
 action (the action_rule table). A job schedule is JSON, see mdb.py (parse_schedule). Everything here is generic: no channel, client
 or person of any user is written in this file. The user's own name is given
 when the database is created (mdb.py init).
@@ -52,6 +52,10 @@ TYPES = [
     ('rule', 'memory', 'قاعدة', 'Rule', ['in_force', 'paused', 'cancelled'], {}),
     ('job', 'memory', 'وظيفة دورية', 'Recurring job', ['enabled', 'paused', 'cancelled'], {}),
     ('run', 'memory', 'تشغيلة', 'Run', ['running', 'complete', 'complete_with_gaps', 'failed'], {}),
+    # 1.7: a problem in how Marionette itself works, found by the owner, a session, a run or the auditor
+    ('issue', 'followup', 'مشكلة في ماريونيت', 'Marionette issue', ['reported', 'in_progress', 'resolved'],
+     {'required': ['description', 'reported_by', 'context'],
+      'optional': ['resolution', 'resolved_by', 'files_changed', 'decision', 'additions']}),
 ]
 
 # Arabic names of the actions, for listing them to a human.
@@ -73,6 +77,7 @@ ACTION_AR = {
     'edit_text': 'تعديل النص', 'resume': 'إعادة تفعيل', 'mark_period_done': 'تعليم الفترة منجزة',
     'start': 'بدء', 'close': 'إغلاق', 'link': 'ربط شيء بشيء', 'add_evidence': 'إضافة دليل',
     'confirm_values': 'تأكيد قيم وضعها Claude استنتاجًا',
+    'start_work': 'بدء العمل على المشكلة', 'resolve': 'حل المشكلة', 'append': 'إضافة نص إلى المشكلة',
 }
 
 U, C, P = 'user', 'claude', 'program'
@@ -109,6 +114,8 @@ A(R('followup', 'merge', [C, U], OPEN, to='done'))
 A(R('followup', 'cancel', [U], OPEN, to='cancelled'))
 A(R('followup', 'mark_late', [P], OPEN))
 A(R('followup', 'assign', [C, U], OPEN))
+# 1.7: a title is rewritten when what it says stops being true (a hand-over rewrites it too)
+A(R('followup', 'rename', [C, U], OPEN))
 # Decision needed
 A(R('decision_needed', 'record_decision', [C, U], OPEN, to='done'))
 # For information: two statuses only
@@ -122,6 +129,16 @@ A(R('for_info', 'assign', [C, U], ('new',)))
 A(R('for_info', 'hand_over', [C, U], ('new',)))
 A(R('for_info', 'change_due', [C, U], ('new',)))
 A(R('for_info', 'set_next_check', [C, U, P], ('new',), evidence_for=()))
+A(R('for_info', 'rename', [C, U], ('new',)))
+# Issue (1.7): reported, worked, resolved; text is added, never rewritten
+ISSUE_OPEN = ('reported', 'in_progress')
+A(R('issue', 'create', [C, U], to='reported'))
+A(R('issue', 'start_work', [C, U], ('reported',), to='in_progress', evidence_for=()))
+A(R('issue', 'resolve', [C, U], ISSUE_OPEN, to='resolved'))
+A(R('issue', 'reopen', [C, U], ('resolved',), to='reported'))
+A(R('issue', 'append', [C, U], ISSUE_OPEN))
+A(R('issue', 'hand_over', [C], ISSUE_OPEN, evidence_for=()))
+A(R('issue', 'set_next_check', [C, P], ISSUE_OPEN, evidence_for=()))
 # Reminder
 A(R('reminder', 'create', [U, C], to='scheduled'))
 A(R('reminder', 'show', [P], ('scheduled',), to='shown', evidence_for=()))

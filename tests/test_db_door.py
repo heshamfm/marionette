@@ -1,4 +1,4 @@
-"""Tests for mdb.py, the Marionette database door (Marionette 1.5).
+"""Tests for mdb.py, the Marionette database door (Marionette 1.5, updated for 1.7).
 
 Run from the repository root:
     python3 tests/test_db_door.py [work_folder]
@@ -87,7 +87,7 @@ def do(*a, **k):
 check('journal mode is TRUNCATE', door.one('PRAGMA journal_mode')[0] == 'truncate')
 check('foreign keys are on', door.one('PRAGMA foreign_keys')[0] == 1)
 check('4 groups', door.one('SELECT count(*) FROM grp')[0] == 4)
-check('22 types', door.one('SELECT count(*) FROM type')[0] == 22)
+check('23 types', door.one('SELECT count(*) FROM type')[0] == 23)
 check('every type has an Arabic name and statuses',
       door.one("SELECT count(*) FROM type WHERE name_ar='' OR json_array_length(statuses)=0")[0] == 0)
 bad('create the database a second time', lambda: mdb.init(DB, 'X'), 'already exists')
@@ -235,8 +235,15 @@ bad('the user records a verdict correction to an unknown value', lambda: do('cor
 bad('Claude defers a thing', lambda: do('defer', 'claude', target=C1), 'only by: user')
 bad('Claude hands the next step over with no evidence', lambda: do('hand_over', 'claude', target=C1,
                                                                    params={'holder': ME}), 'needs evidence')
-ok('Claude hands the next step over with evidence', lambda: do('hand_over', 'claude', target=C1, evidence=EV,
-                                                               params={'holder': ME}))
+bad('a hand-over with no new title (1.7)', lambda: do('hand_over', 'claude', target=C1, evidence=EV,
+                                                     params={'holder': ME}), 'missing: title')
+bad('a hand-over that does not re-decide the dates (1.7)', lambda: do('hand_over', 'claude', target=C1, evidence=EV,
+                                                                     params={'holder': ME, 'title': 'T'}),
+    're-decides the dates')
+ok('Claude hands the next step over with evidence, a new title and dates', lambda: do(
+    'hand_over', 'claude', target=C1, evidence=EV,
+    params={'holder': ME, 'title': door.thing(C1)['title'], 'due': door.one(
+        'SELECT due FROM followup WHERE thing_id=?', (C1,))[0] or '2026-12-01'}))
 check('the change of holder keeps the old and the new value',
       door.one("SELECT count(*) FROM audit WHERE thing_id=? AND field='followup.holder_id' AND old_value=? "
                "AND new_value=?", (C1, str(SAM), str(ME)))[0] == 1)
@@ -306,8 +313,11 @@ ok('the program shows it in the report', lambda: do('show', 'program', target=FI
 bad('complete a for-information thing', lambda: do('complete', 'user', target=FI), 'not allowed while the status')
 bad('Claude marks it seen', lambda: do('mark_seen', 'claude', target=FI), 'only by: user')
 NEWC = ok('Claude converts it into a reply needed', lambda: do('convert', 'claude', target=FI, evidence=EV, params={
-    'new_type': 'reply_needed', 'title': 'answer Acme', 'holder': ME, 'requested_by': SAM,
+    'new_type': 'reply_needed', 'title': 'answer Acme', 'holder': ME, 'requested_by': SAM, 'next_check': '2026-11-20',
     'details': {'request': 'confirm the new address'}}))
+bad('a conversion into an open item with no date (1.7)', lambda: do('convert', 'claude', target=FI, evidence=EV, params={
+    'new_type': 'reply_needed', 'title': 'answer Acme again', 'holder': ME, 'requested_by': SAM,
+    'details': {'request': 'confirm'}}), 'keeps a due date')
 check('the converted thing is new and linked', NEWC and door.one(
     "SELECT 1 FROM link WHERE from_id=? AND to_id=? AND role='converted_from'", (NEWC['new_id'], FI)))
 ok('the user marks it seen', lambda: do('mark_seen', 'user', target=FI))

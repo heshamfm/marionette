@@ -44,8 +44,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import mdb  # noqa: E402
 
-VERSION = '1.5'
-PROGRAMS = ('mdb.py', 'mrun.py', 'schema_v0.1.sql', 'seed_v0.1.py', 'migrate.py')
+VERSION = '1.7'
+PROGRAMS = ('mdb.py', 'mrun.py', 'schema_v0.1.sql', 'seed_v0.1.py', 'migrate.py', 'upgrade.py')
 DOORS = ('brief.py', 'run_gate.py', 'build_status.py')
 OLD_MEMORY = ('index.tsv', 'items', 'drafts.tsv', 'data/drafts', 'questions.md', 'reminders', 'data/disposition.tsv')
 OLD_CHANNEL = 'Marionette files before the database'
@@ -243,11 +243,31 @@ class Migration:
         self.dispositions()
         self.drafts()
         self.jobs()
+        self.date_the_undated()
         self.settle(self.session)
         for sid in self.src_of.values():
             self.settle(sid)
         self.do('run', 'close', 'program', self.run)
         return self.report()
+
+    def date_the_undated(self):
+        """1.7: every open item keeps a due date or a next check. Items that had neither in the files get a next
+        check on the day after the move, so the first runs look at each of them; the report says so."""
+        nxt = (datetime.date.fromisoformat(self.door.now()[:10]) + datetime.timedelta(days=1)).isoformat()
+        rows = self.door.conn.execute(
+            "SELECT t.id, t.type, f.details FROM followup f JOIN thing t ON t.id=f.thing_id WHERE t.type IN "
+            "('commitment','reply_needed','decision_needed','for_info') AND f.status IN ('open','deferred','new') "
+            "AND f.due IS NULL AND f.next_check IS NULL").fetchall()
+        n = 0
+        for r in rows:
+            d = json.loads(r['details'] or '{}')
+            if r['type'] == 'decision_needed' and (d.get('old_question') or d.get('kind') == 'question'):
+                continue
+            self.door.do('set_next_check', 'program', r['id'], params={'next_check': nxt}, run=self.run)
+            n += 1
+        if n:
+            self.choices.append(f'{n} open items had no deadline and no next check; their next check is {nxt}, so the '
+                                'first runs look at each one')
 
     def channels(self):
         r = self.do('channel', 'create', 'user', type='channel', evidence=self.owner_ev,
@@ -794,6 +814,12 @@ def apply(a, rep, tz):
             src = os.path.join(HERE, 'doors', name) if name in DOORS else os.path.join(HERE, name)
             shutil.copyfile(src, os.path.join(tools, name))
             os.chmod(os.path.join(tools, name), 0o644)
+        # 1.7: what was installed, so a later upgrade can tell an untouched copy from one the owner changed
+        import hashlib
+        with open(os.path.join(tools, '.marionette_manifest.json'), 'w', encoding='utf-8') as f:
+            json.dump({'version': VERSION, 'files': {
+                n: hashlib.sha256(open(os.path.join(tools, n), 'rb').read()).hexdigest()
+                for n in PROGRAMS + DOORS + ('db_usage.md',)}}, f, indent=1)
         # 4. the old memory moves into the archive; a read-only placeholder stays at each old path
         moved = []
         for rel in OLD_MEMORY:
@@ -816,7 +842,12 @@ def apply(a, rep, tz):
                 make_read_only(p)
         # 5. state.json: watermarks and lock now live in the database
         st = json.loads(read(st_path))
-        st['before_db'] = {'watermarks': st.pop('watermarks', None), 'jobs': st.pop('jobs', None), 'moved_to': where}
+        import sqlite3
+        cmax = sqlite3.connect('file:' + final + '?mode=ro', uri=True)
+        max_audit = cmax.execute('SELECT coalesce(max(id),0) FROM audit').fetchone()[0]
+        cmax.close()
+        st['before_db'] = {'watermarks': st.pop('watermarks', None), 'jobs': st.pop('jobs', None), 'moved_to': where,
+                           'max_audit': max_audit}
         st['memory'] = {'kind': 'database', 'file': 'db/marionette.db', 'since': day, 'version': VERSION}
         st.pop('lock', None)
         with open(st_path, 'w', encoding='utf-8') as f:
@@ -856,10 +887,14 @@ def undo(a):
     if os.path.exists(db):
         import sqlite3
         c = sqlite3.connect('file:' + db + '?mode=ro', uri=True)
-        moved_at = c.execute("SELECT min(at) FROM audit WHERE run_id IN (SELECT thing_id FROM run WHERE "
-                             "trigger_kind='migration')").fetchone()[0] or ''
-        after = c.execute("SELECT count(*) FROM audit WHERE (run_id IS NULL OR run_id NOT IN (SELECT thing_id FROM "
-                          "run WHERE trigger_kind='migration')) AND at>?", (moved_at,)).fetchone()[0]
+        if b.get('max_audit') is not None:
+            # 1.7: counted by the last change of the move itself, never by time (two changes in one second)
+            after = c.execute('SELECT count(*) FROM audit WHERE id>?', (b['max_audit'],)).fetchone()[0]
+        else:
+            moved_at = c.execute("SELECT min(at) FROM audit WHERE run_id IN (SELECT thing_id FROM run WHERE "
+                                 "trigger_kind='migration')").fetchone()[0] or ''
+            after = c.execute("SELECT count(*) FROM audit WHERE (run_id IS NULL OR run_id NOT IN (SELECT thing_id "
+                              "FROM run WHERE trigger_kind='migration')) AND at>?", (moved_at,)).fetchone()[0]
         c.close()
         os.makedirs(os.path.join(aside, 'db'))
         shutil.move(db, os.path.join(aside, 'db', 'marionette.db'))

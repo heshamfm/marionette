@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Marionette by Hesham Elmahdy (github.com/heshamfm): the run-time layer, version 1.6.
+"""Marionette by Hesham Elmahdy (github.com/heshamfm): the run-time layer, version 1.7.
 
 What the scheduled runs and the sessions use in an installation that keeps its memory in the database,
 instead of editing the files (index.tsv, items/, drafts.tsv, questions.md, reminders/, data/disposition.tsv,
@@ -40,6 +40,14 @@ Usage (DB defaults to $MARIONETTE_DB, else ../db/marionette.db beside this progr
   mrun.py draft --run ID --item ID --channel NAME --kind reply|forward|new [--replies-to X] --recipients JSON
                 [--cc JSON] [--subject S] --text-file FILE [--mail-draft-id X]
   mrun.py remind --run ID --text T --due D --session ID --quote Q    a reminder the user asked for
+ issues: problems in how Marionette itself works (1.7)
+  mrun.py issue-new --run ID --title T --reported-by WHO --context WHERE --what-happened X --found X
+                    [--owner-words X] --asked X --source ID --quote Q      written in one fixed template
+  mrun.py issue-append --run ID --issue I --text T --source ID --quote Q  add to an issue, word for word
+  mrun.py issue-act --run ID --issue I --action start_work|resolve|reopen [--params JSON] [--source ID --quote Q]
+  mrun.py issues [--all]                                    the register
+  mrun.py issue I                                           one issue exactly as stored (what the owner is shown)
+  mrun.py version                                           the release of this database and of these programs
  WHO is "me", a party number, or an email address of a recorded party.
 """
 import argparse
@@ -84,6 +92,15 @@ TEXT = {
   'undated': 'Open items with no due date and no next check ({n}). Oldest:',
   'clean': 'Every channel was read, everything read is classified, nothing is missing.',
   'q_title': 'Question: ', 'd_title': 'Draft: ',   'you_tag': '- [you] ', 'jobs_tag': '- [jobs] ',
+  'reply_needed_by': 'reply needed from {n}', 'decision_needed_by': 'decision needed from {n}',
+  'step_with': 'next step with {n}',
+  'check_left': 'Item {i}: its next check {d} came and this run did not handle it: {t}',
+  'undated_item': 'Item {i} is open with no due date and no next check: {t}',
+  'issue_head': 'Written by: {w}, {at}, {c}.', 'issue_what': 'What happened', 'issue_found': 'What was found, quoting the sources',
+  'issue_words': "The owner's words, verbatim", 'issue_asked': 'What is asked, step by step',
+  'issue_similar': 'Look for the similar cases of this problem in the rules, the programs and the data, and fix them all, not this one only.',
+  'issue_no_words': 'The owner said nothing about it: it was found by {w}',
+  'issue_line': 'Issue {i} ({s}): {t}', 'issue_add': 'Added {at} ({b}):', 'issue_res': 'How it was resolved: ',
  },
  'ar': {
   'you': 'أنت', 'open': 'مفتوح', 'waiting': 'بانتظار رد الآخرين', 'not_needed': 'أُغلق دون إجراء',
@@ -110,6 +127,15 @@ TEXT = {
   'undated': 'بنود مفتوحة بلا موعد ولا تاريخ فحص قادم ({n}). الأقدم:',
   'clean': 'كل القنوات قُرئت، وكل ما قُرئ مصنّف، ولا شيء ناقص.',
   'q_title': 'سؤال: ', 'd_title': 'مسودة: ',   'you_tag': '- [ينتظرك] ', 'jobs_tag': '- [الأعمال] ',
+  'reply_needed_by': 'رد مطلوب من {n}', 'decision_needed_by': 'قرار مطلوب من {n}',
+  'step_with': 'الخطوة عند {n}',
+  'check_left': 'البند {i} حلّ موعد فحصه {d} ولم يعالجه هذا التشغيل: {t}',
+  'undated_item': 'البند {i} مفتوح بلا موعد ولا موعد فحص: {t}',
+  'issue_head': 'كتبه: {w}، {at}، {c}.', 'issue_what': 'ما حدث', 'issue_found': 'ما وُجد، مع اقتباس المصادر',
+  'issue_words': 'كلام صاحب النظام بنصه', 'issue_asked': 'المطلوب، خطوة خطوة',
+  'issue_similar': 'ابحث عن الحالات المشابهة لهذه المشكلة في القواعد والبرامج والبيانات، وأصلحها كلها، لا هذه وحدها.',
+  'issue_no_words': 'لا كلام له فيها: وجدها {w}',
+  'issue_line': 'المشكلة {i} ({s}): {t}', 'issue_add': 'إضافة {at} ({b}):', 'issue_res': 'طريقة الحل: ',
  },
 }
 
@@ -188,6 +214,11 @@ class Run:
         return self.T.get(s, s) if s in ('deferred', 'new', 'seen', 'cancelled', 'ready', 'scheduled', 'shown') else s
 
     def ar_type(self, tid, ty):
+        # 1.7: "reply/decision needed" names whoever holds the next step when it is not the user
+        if ty in ('reply_needed', 'decision_needed'):
+            h = self.one('SELECT holder_id FROM followup WHERE thing_id=?', (tid,))
+            if h and h[0] is not None and h[0] != self.me:
+                return self.t(ty + '_by', n=self.name(h[0]).strip())
         if ty == 'commitment':
             r = self.one("SELECT to_id FROM link WHERE from_id=? AND role='promised_by'", (tid,))
             return self.t('my_commitment') if r and r[0] == self.me else self.t('their_commitment')
@@ -231,6 +262,15 @@ class Run:
             if not (x['type'] == 'decision_needed' and (d.get('old_question') or d.get('kind') == 'question')):
                 out[x['id']] = x['why']
         return out
+
+    def checks_due(self):
+        """Alive items that are not questions and whose next check is today or earlier (1.7)."""
+        today = self.now()[:10]
+        return [r for r in self.items() if r['next_check'] and r['next_check'][:10] <= today
+                and not self.is_question(r)]
+
+    def touched_in_run(self, tid, run):
+        return bool(self.one('SELECT 1 FROM audit WHERE thing_id=? AND run_id=? LIMIT 1', (tid, run)))
 
     def is_question(self, r):
         d = json.loads(r['details'])
@@ -281,6 +321,26 @@ class Run:
                      f"{self.ar_type(r['id'], r['type'])} | due {r['due'] or '-'}{lt}{ncs} | "
                      f"{self.counterparty(r['id'], r['holder_id'])} | {r['title']} | last {self.last_event(r['id'])}")
         L.append(f'count check: open {len(rows)} listed')
+        mine = [r for r in rows if r['holder_id'] == self.me]
+        L.append('')
+        L.append(f'## ON THE USER ({len(mine)}): the next step is the user\'s. The ONLY list a message may present as '
+                 '"waiting for you" or "you need to do today"; an item held by anyone else is never there, whatever its '
+                 'type or date')
+        for r in mine:
+            L.append(f"- {r['id']} | due {r['due'] or '-'}" + (' LATE' if r['id'] in late else '') + f" | {r['title']}")
+        cd = self.checks_due()
+        L.append('')
+        L.append(f'## CHECKS DUE ({len(cd)}): the next check came. Handle EVERY one in this run: look it up live, then '
+                 'story or act with what was found, or set_next_check to a later date quoting what was checked; the '
+                 'end-of-run check lists any left')
+        for r in cd:
+            L.append(f"- {r['id']} | next_check {r['next_check'][:10]} | holder "
+                     f"{self.name(r['holder_id']).strip() or '-'} | {r['title']}")
+        iss = self.issues()
+        L.append('')
+        L.append(f'## Marionette issues open ({len(iss)}): problems in how Marionette works (mrun.py issues)')
+        for x in iss:
+            L.append(f"- {x['id']} | {x['status']} | reported {x['created']} by {x['reported_by']} | {x['title']}")
         drafts = self.q("SELECT t.id, t.title, t.created_at, f.details FROM followup f JOIN thing t ON t.id=f.thing_id "
                         "WHERE t.type='draft' AND f.status='ready' ORDER BY t.id")
         L.append('')
@@ -397,7 +457,7 @@ class Run:
         for r in rows:
             if r['id'] in late:
                 L.append(f"- {r['title']}: {late[r['id']]} ({self.ar_type(r['id'], r['type'])}{self.t('sep')}"
-                         f"{self.counterparty(r['id'], r['holder_id'])})")
+                         f"{self.t('step_with', n=self.name(r['holder_id']).strip())})")
         L.append('')
         waiting = [r for r in rows if r['holder_id'] != self.me and r['id'] not in late]
         L.append(self.t('h_waiting', n=len(waiting)))
@@ -483,6 +543,14 @@ class Run:
                 inf.append(x['title'])
         undated = [x for x in self.items() if not x['due'] and not x['next_check'] and x['status'] in ALIVE
                    and not self.is_question(x)]
+        # 1.7: every check that came is handled in the run that meets it (anything it recorded on the item: a story
+        # line with what was found, an act, or the next check moved with what was checked), and every open item keeps
+        # a date
+        for x in self.checks_due():
+            if not self.touched_in_run(x['id'], run):
+                bad.append(self.t('check_left', i=x['id'], d=x['next_check'][:10], t=x['title'][:90]))
+        for x in undated:
+            bad.append(self.t('undated_item', i=x['id'], t=x['title'][:90]))
         start = r['started'][:16]
         print(self.t('gate_head', s=start, r=read, n=len(enabled)))
         for line in bad:
@@ -504,11 +572,7 @@ class Run:
             print(self.t('informed', n=len(inf)))
             for x in inf:
                 print('- ' + x)
-        if undated:
-            print(self.t('undated', n=len(undated)))
-            for x in undated[:10]:
-                print(f"- {x['title']}")
-        if not (bad or notes or un or undated):
+        if not (bad or notes or un):
             print(self.t('clean'))
         return 1 if (bad or un) else 0
 
@@ -562,7 +626,17 @@ class Run:
         cid = self.channel_id(channel)
         old = self.one('SELECT thing_id FROM source WHERE channel_id=? AND external_id=?', (cid, str(external_id)))
         if old:
-            return {'id': old[0], 'already': True, **self.source(channel, external_id)}
+            # 1.7: a source recorded before can be read further later: --read moves its read state forward
+            # (unread or failed -> partial -> full) while it has no verdict; never backward
+            cur = self.source(channel, external_id)
+            rank = {'unread': 0, 'failed': 0, 'partial': 1, 'full': 2}
+            if read and cur.get('verdict') is None and rank.get(read, -1) > rank.get(cur.get('read_state'), 0):
+                p = {'read_state': read}
+                if reason:
+                    p['reason'] = reason
+                self.do('read', 'claude', old[0], params=p, run=run)
+                return {'id': old[0], 'already': True, 'read_updated': True, **self.source(channel, external_id)}
+            return {'id': old[0], 'already': True, **cur}
         res = self.do('record', 'claude', type=type, run=run, params={
             'channel_id': cid, 'external_id': str(external_id), 'title': title, 'source_date': date,
             'permalink': permalink, 'details': details or {}})
@@ -646,6 +720,88 @@ class Run:
         return self.do('create', 'claude', type='draft', run=run,
                        params={'title': self.t('d_title') + title[:100], 'holder': self.me, 'details': d})
 
+    # ------------------------------------------------------------ issues register (1.7)
+    ISSUE_PARTS = (('what_happened', 'issue_what'), ('found', 'issue_found'), ('owner_words', 'issue_words'),
+                   ('asked', 'issue_asked'))
+
+    def issue_new(self, run, title, reported_by, context, source, quote, what_happened=None, found=None,
+                  owner_words=None, asked=None, holder=None, actor='claude', description=None):
+        """A problem in how Marionette works, always written in one template the program builds, so no part can be
+        left out: who wrote it, when and where; what happened; what was found, quoting the sources; the owner's
+        words verbatim (required when the owner reported it); what is asked, step by step; and always the step to
+        find and fix the similar cases."""
+        if description and not what_happened:
+            raise mdb.Refused('an issue is written in the template: --what-happened, --found, --owner-words, --asked '
+                              '(db_usage.md, Issues register)')
+        parts = {'what_happened': what_happened, 'found': found, 'owner_words': owner_words, 'asked': asked}
+        # the owner's words may be left out only when the issue was clearly found by Marionette itself
+        owner = self.one('SELECT title FROM thing WHERE id=?', (self.me,))[0] or ''
+        names = [w for w in re.split(r'\s+', owner) if len(w) > 1]
+        by_owner = actor == 'user' or re.search(r'\b(owner|user)\b', reported_by or '', re.I) or any(
+            re.search(r'(?<!\w)' + re.escape(w) + r'(?!\w)', reported_by or '', re.I) for w in names)
+        by_marionette = re.match(r'\s*(run\b|the auditor\b|auditor\b|program\b)', reported_by or '', re.I)
+        if not (owner_words or '').strip() and by_marionette and not by_owner:
+            parts['owner_words'] = self.t('issue_no_words', w=reported_by)
+        short = [k for k, v in parts.items() if len((v or '').strip()) < 20]
+        if short:
+            raise mdb.Refused('the issue template is incomplete (each part at least a full sentence): ' + ', '.join(short))
+        L = [self.t('issue_head', w=reported_by, at=self.now()[:16], c=context), '']
+        for key, head in self.ISSUE_PARTS:
+            L += [self.t(head) + ':', parts[key].strip(), '']
+        L.append('- ' + self.t('issue_similar'))
+        h = self.me if holder in (None, 'me') else (int(self.door.meta('marionette_party_id')) if holder == 'marionette'
+                                                    else int(holder))
+        d = {'description': '\n'.join(L), 'reported_by': reported_by, 'context': context, **parts}
+        r = self.do('create', actor, type='issue', run=run, evidence=self.ev(source, quote),
+                    params={'title': title, 'holder': h, 'details': d, 'next_check': self.now()[:10]})
+        r['saved_text'] = self.issue_text(r['id'])
+        return r
+
+    def issue_text(self, issue):
+        """The issue exactly as stored: what a session shows the owner, never a text written beside it."""
+        r = self.one("SELECT t.id, t.title, f.status, f.details FROM followup f JOIN thing t ON t.id=f.thing_id "
+                     "WHERE t.id=? AND t.type='issue'", (int(issue),))
+        if not r:
+            raise mdb.Refused(f'no issue {issue}')
+        d = json.loads(r['details'])
+        L = [self.t('issue_line', i=r['id'], s=r['status'], t=r['title']), '', d.get('description') or '']
+        for a in d.get('additions') or []:
+            L += ['', self.t('issue_add', at=a['at'], b=a['by']), a['text']]
+        if d.get('resolution'):
+            L += ['', self.t('issue_res') + d['resolution']]
+        return '\n'.join(L)
+
+    def issue_append(self, run, issue, text, source, quote, by=None, actor='claude'):
+        r = self.do('append', actor, int(issue), params={'text': text, 'by': by or actor},
+                    evidence=self.ev(source, quote), run=run)
+        r['saved_text'] = self.issue_text(issue)
+        return r
+
+    def issue_act(self, run, issue, action, params=None, source=None, quote=None, actor='claude'):
+        if action not in ('start_work', 'resolve', 'reopen', 'hand_over', 'set_next_check'):
+            raise mdb.Refused('an issue action is start_work, resolve, reopen, hand_over or set_next_check '
+                              '(to add text: issue-append)')
+        return self.do(action, actor, int(issue), params=params or {}, evidence=self.ev(source, quote), run=run)
+
+    def issues(self, all_=False):
+        sql = ("SELECT t.id, t.title, t.created_at, f.status, f.details FROM followup f JOIN thing t ON "
+               "t.id=f.thing_id WHERE t.type='issue'" +
+               ('' if all_ else " AND f.status IN ('reported','in_progress')") + " ORDER BY t.id")
+        out = []
+        for r in self.q(sql):
+            d = json.loads(r['details'])
+            ch = self.q("SELECT at, actor, new_value FROM audit WHERE thing_id=? AND field='followup.status' "
+                        "ORDER BY id", (r['id'],))
+            out.append({'id': r['id'], 'title': r['title'], 'status': r['status'], 'created': r['created_at'][:16],
+                        'reported_by': d.get('reported_by'), 'context': d.get('context'),
+                        'description': d.get('description'), 'additions': d.get('additions') or [],
+                        'resolution': d.get('resolution'),
+                        'history': [f"{x['at'][:16]} {x['actor']} -> {x['new_value']}" for x in ch]})
+        return out
+
+    def version(self):
+        return {'installed': self.door.meta('marionette_version', 'unknown (before 1.7)'), 'programs': mdb.VERSION}
+
     def remind(self, run, text, due, session, quote):
         return self.do('create', 'user', type='reminder', run=run, evidence=self.ev(session, quote),
                        params={'title': text[:120], 'holder': self.me, 'due': due, 'details': {'text': text}})
@@ -713,6 +869,25 @@ def main(argv=None):
         s.add_argument(k, required=True)
     for k in ('--replies-to', '--cc', '--subject', '--mail-draft-id'):
         s.add_argument(k)
+    s = sub.add_parser('issue-new')
+    for k in ('--run', '--title', '--reported-by', '--context', '--source', '--quote'):
+        s.add_argument(k, required=True)
+    for k in ('--what-happened', '--found', '--owner-words', '--asked', '--description', '--holder'):
+        s.add_argument(k)
+    s.add_argument('--actor', default='claude', choices=('claude', 'user'))
+    s = sub.add_parser('issue-append')
+    for k in ('--run', '--issue', '--text', '--source', '--quote'):
+        s.add_argument(k, required=True)
+    s.add_argument('--by'); s.add_argument('--actor', default='claude', choices=('claude', 'user'))
+    s = sub.add_parser('issue-act')
+    for k in ('--run', '--issue', '--action'):
+        s.add_argument(k, required=True)
+    for k in ('--params', '--source', '--quote'):
+        s.add_argument(k)
+    s.add_argument('--actor', default='claude', choices=('claude', 'user'))
+    s = sub.add_parser('issues'); s.add_argument('--all', action='store_true')
+    s = sub.add_parser('issue'); s.add_argument('id')
+    sub.add_parser('version')
     s = sub.add_parser('remind')
     for k in ('--run', '--text', '--due', '--session', '--quote'):
         s.add_argument(k, required=True)
@@ -725,6 +900,8 @@ def main(argv=None):
             print(R.brief(a.full_questions)); return 0
         if c == 'gate':
             return R.gate(a.run, a.channels_file)
+        if c == 'issue':
+            print(R.issue_text(a.id)); return 0
         run = int(a.run) if getattr(a, 'run', None) not in (None, '') else None
         out = {
             'late': lambda: R.late(),
@@ -752,6 +929,13 @@ def main(argv=None):
                                      open(a.text_file, encoding='utf-8').read(), a.replies_to, J(a.cc), a.subject,
                                      a.mail_draft_id),
             'remind': lambda: R.remind(run, a.text, a.due, a.session, a.quote),
+            'issue-new': lambda: R.issue_new(run, a.title, a.reported_by, a.context, a.source, a.quote,
+                                             a.what_happened, a.found, a.owner_words, a.asked, a.holder, a.actor,
+                                             a.description),
+            'issue-append': lambda: R.issue_append(run, a.issue, a.text, a.source, a.quote, a.by, a.actor),
+            'issue-act': lambda: R.issue_act(run, a.issue, a.action, J(a.params), a.source, a.quote, a.actor),
+            'issues': lambda: R.issues(a.all),
+            'version': lambda: R.version(),
         }[c]()
         print(json.dumps(out, ensure_ascii=False, indent=1, default=str))
         return 0

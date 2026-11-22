@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Marionette by Hesham Elmahdy (github.com/heshamfm): the database door, version 1.5.
+"""Marionette by Hesham Elmahdy (github.com/heshamfm): the database door, version 1.7.
 
 This program is the only door for writing to the Marionette database.
 - Judgment (which action is needed, and why) belongs to the user or to Claude.
@@ -43,9 +43,13 @@ STATUS_TABLE = {'party': 'party', 'area': 'area', 'project': 'project', 'channel
                 'file': 'file', 'decision': 'decision', 'rule': 'rule', 'job': 'job', 'run': 'run'}
 NO_VERDICT = 'none'
 # statuses of a follow-up thing that is still alive
-ACTIVE = ('open', 'deferred', 'new', 'scheduled', 'shown', 'ready')
+ACTIVE = ('open', 'deferred', 'new', 'scheduled', 'shown', 'ready', 'reported', 'in_progress')
 WEEKDAYS = ('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun')
 SESSIONS_CHANNEL = 'Claude sessions'
+VERSION = '1.7'   # the Marionette release these programs belong to (meta "marionette_version")
+# the follow-up items proper; every one that is alive carries a due date or a next check (1.7)
+ITEM_TYPES = ('commitment', 'reply_needed', 'decision_needed', 'for_info')
+ALIVE_ITEM = ('open', 'deferred', 'new')
 # why a thing is late, in the language the database was created with
 LATE_TEXT = {'en': ('the due time was {d}', 'not addressed since {d}'),
              'ar': ('كان الموعد {d}', 'لم تتناوله منذ ظهر يوم {d}')}
@@ -395,6 +399,8 @@ class Door:
                 self.audit(tid, action, 'evidence', None, self.ctx['evidence_id'])
             if rule['to_status'] and not result.get('status_set'):
                 self.set_status(tid, rule['to_status'])
+            if action == 'reopen':
+                self.ensure_dated(tid)  # a reopened item is open again, so it needs a date again (1.7)
             if inferred:
                 self.mark_inferred(tid, inferred)
             self.conn.execute('COMMIT')
@@ -466,15 +472,67 @@ class Door:
             raise Refused(f'thing {d["channel_id"]} is not a channel')
 
     def a_hand_over(self, tid, p):
+        """The next step moves to another party. For an item this re-decides, in the same action, the title (written
+        for the new holder: what they do next), the due date and the next check. Added in 1.7: an item handed over with
+        its old title ("X asks you to review") and its old date kept telling the user the step was still his."""
         self.require(p, 'holder')
         self.party(p['holder'], 'next step holder')
+        if self.ctx['type'] in ITEM_TYPES:
+            self.require(p, 'title')
+            if 'due' not in p and 'next_check' not in p:
+                raise Refused('a hand-over re-decides the dates: give "due" (the new holder\'s date, or null when '
+                              'there is none) and/or "next_check" (when Marionette looks again)')
+            if p['title'] != self.thing(tid)['title']:
+                self.set('thing', tid, 'title', p['title'])
+            for k in ('due', 'next_check'):
+                if k in p:
+                    self.set('followup', tid, k, p[k] or None)
         self.set('followup', tid, 'holder_id', p['holder'])
+        self.ensure_dated(tid)
 
     def a_change_due(self, tid, p):
         self.set('followup', tid, 'due', p.get('due'))
+        self.ensure_dated(tid)
 
     def a_set_next_check(self, tid, p):
         self.set('followup', tid, 'next_check', p.get('next_check'))
+        self.ensure_dated(tid)
+
+    def ensure_dated(self, tid):
+        """An alive item always carries a due date or a next check, so it can never drop out of sight (1.7)."""
+        if self.ctx['type'] not in ITEM_TYPES:
+            return
+        r = self.one('SELECT status, due, next_check FROM followup WHERE thing_id=?', (tid,))
+        if r['status'] in ALIVE_ITEM and not r['due'] and not r['next_check']:
+            raise Refused('an open item keeps a due date or a next check; give the other one in the same action')
+
+    # ---------- issues: problems in how Marionette itself works (1.7) ----------
+    def a_start_work(self, tid, p):
+        if p.get('note'):
+            self.set_detail(tid, 'started_note', p['note'])
+
+    def a_resolve(self, tid, p):
+        """An issue is resolved; how it was resolved is required."""
+        self.require(p, 'resolution')
+        for k in ('resolution', 'resolved_by', 'files_changed', 'decision'):
+            if p.get(k):
+                self.set_detail(tid, k, p[k])
+
+    def a_append(self, tid, p):
+        """Add to an issue without rewriting it: the text is kept word for word with its time and writer."""
+        self.require(p, 'text')
+        d = json.loads(self.one('SELECT details FROM followup WHERE thing_id=?', (tid,))[0])
+        d['additions'] = (d.get('additions') or []) + [
+            {'at': self.now()[:16], 'by': p.get('by') or self.ctx['actor'], 'text': p['text']}]
+        self.conn.execute('UPDATE followup SET details=? WHERE thing_id=?', (json.dumps(d, ensure_ascii=False), tid))
+        self.audit(tid, 'append', 'details.additions', None, p['text'])
+
+    def set_detail(self, tid, key, value):
+        d = json.loads(self.one('SELECT details FROM followup WHERE thing_id=?', (tid,))[0])
+        old = d.get(key)
+        d[key] = value
+        self.conn.execute('UPDATE followup SET details=? WHERE thing_id=?', (json.dumps(d, ensure_ascii=False), tid))
+        self.audit(tid, self.ctx['action'], 'details.' + key, None if old is None else str(old), str(value))
 
     def a_defer(self, tid, p):
         if self.ctx['type'] == 'reminder':
@@ -494,6 +552,9 @@ class Door:
 
     def a_reopen(self, tid, p):
         self.set('followup', tid, 'close_reason', None)
+        for k in ('due', 'next_check'):
+            if p.get(k):
+                self.set('followup', tid, k, p[k])
 
     def a_merge(self, tid, p):
         g = self.ctx['grp']
@@ -564,6 +625,10 @@ class Door:
         if self.ctx.get('evidence'):
             self.add_evidence(new, self.ctx['evidence'])
         self.add_link(new, tid, 'converted_from')
+        saved_type = self.ctx['type']
+        self.ctx['type'] = new_type
+        self.ensure_dated(new)
+        self.ctx['type'] = saved_type
         return {'id': tid, 'new_id': new}
 
     # ---------- drafts ----------
@@ -1038,6 +1103,9 @@ class Door:
     def a_add_evidence(self, tid, p):
         if not self.ctx.get('evidence_id'):
             raise Refused('give the evidence: a source number and the verbatim quote')
+        # a story line is a change like any other: it goes to the audit trail with its run (1.7), so the end-of-run
+        # check can see that the run handled the item
+        self.audit(tid, 'add_evidence', 'evidence', None, self.ctx['evidence_id'])
 
     # ================= reading (no writing) =================
     def show(self, tid):
@@ -1187,6 +1255,7 @@ def init(path, user_name, user_email=None, now=None, timezone=DEFAULT_TZ, workda
     conn.execute('BEGIN')
     load_seed().seed(conn)
     conn.execute("INSERT INTO meta(key,value) VALUES('schema_version','0.1')")
+    conn.execute("INSERT INTO meta(key,value) VALUES('marionette_version',?)", (VERSION,))
     conn.execute('COMMIT')
     conn.close()
     door = Door(path, now=now or (lambda: local_now(timezone)))

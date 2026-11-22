@@ -1,6 +1,6 @@
 # The Marionette database: how runs, jobs and sessions read and write it
 
-Marionette by Hesham Elmahdy (github.com/heshamfm), version 1.5. This file is the home of every rule on HOW to read
+Marionette by Hesham Elmahdy (github.com/heshamfm), version 1.7. This file is the home of every rule on HOW to read
 and write the database. What to do and when stays in MANUAL.md, channels.md and jobs/. When this file exists in
 tools/, the memory is the database: the marionette skill sends every read and every write here.
 
@@ -9,7 +9,9 @@ tools/, the memory is the database: the marionette skill sends every read and ev
   write, never copy it while a run is writing, and never keep it in a folder that Google Drive, iCloud, OneDrive or
   Dropbox synchronises (a synchronised copy of a database being written can be damaged).
 - The programs, in tools/: mdb.py (the door: the only program that writes), mrun.py (what every run and session
-  uses), schema_v0.1.sql and seed_v0.1.py (read by the door), migrate.py (the move from files, already done).
+  uses), schema_v0.1.sql and seed_v0.1.py (read by the door), migrate.py (the move from files, already done),
+  upgrade.py (brings the installation up to a new release; the skill runs the copy that comes with it).
+  python3 tools/mrun.py version prints the release of the database and of the programs.
 - Run them from the followup folder: python3 tools/mrun.py <command>. Output is JSON, except brief, status and gate,
   which print text in the owner's language. A refusal prints {"refused": "..."} and exit code 2: nothing was
   written. Read the reason and act on it; never work around a refusal by another route.
@@ -32,6 +34,9 @@ create a channel or a job) needs the owner's own words quoted from the session: 
   reply_needed (someone waits for the owner's reply; --requested-by), decision_needed, for_info.
 - "Open" means the next step is the owner's: holder = me. "Waiting on others" means the next step is another
   party's: holder = that party. A deadline written in words and not as a date counts as no deadline.
+- The holder alone decides what waits for the owner: the brief section ON THE USER is the only list a message may
+  present as waiting for the owner. "Reply needed" and "decision needed" name the holder when it is not the owner.
+- Every open item keeps a due date or a next check; the program refuses to remove the last one.
 - WHO is "me", a party number, or the email address of a recorded party.
 
 ## File action → command
@@ -44,7 +49,10 @@ create a channel or a job) needs the owner's own words quoted from the session: 
 | filling the disposition | verdict --run R --source S --verdict linked (after an item quotes it or links it), informed (after a for_info item quotes it), or ignored --reason "<code>: <one sentence>" (the codes are the closed list in MANUAL.md section 3) |
 | a new item in index.tsv and items/ | new-item --run R --type commitment/reply_needed/decision_needed/for_info --title "..." --holder me/<who> [--promised-by WHO] [--requested-by WHO] --due YYYY-MM-DD[ HH:MM] and/or --next-check YYYY-MM-DD --details '{"text" / "request" / "question" / "what_happened" + "why_it_matters": "..."}' --source S --quote "<the exact sentence>". A person or company not yet recorded: party --run R --name "..." --email ... --source S --quote "..." first. Values you inferred: --inferred holder,due |
 | a story line "- YYYY-MM-DD HH:MM \| text" | story --run R --item I --source S --quote "<exact sentence>" |
-| changing status, holder, deadline or next check | act --run R --item I --action complete (--params '{"close_reason": "done"/"not_needed"/"handed_over"}'), hand_over (--params '{"holder": <party>}'), change_due, set_next_check, reopen, merge or link, each with --source S --quote "..." |
+| changing status, holder, deadline or next check | act --run R --item I --action complete (--params '{"close_reason": "done"/"not_needed"/"handed_over"}'), hand_over (--params '{"holder": <party>, "title": "<what the new holder does next>", "due": "<date or null>", "next_check": "<date>"}': the title and at least one date are required), change_due, set_next_check, reopen, merge or link, each with --source S --quote "..." |
+| changing an item's title | act --run R --item I --action rename --params '{"title": "..."}' --source S --quote "<the sentence that changed it>" |
+| the text of a waiting draft changed (edited in the mail tool, rewritten in a session) | act --run R --item <draft> --action edit --params '{"text": "<the full new text>"}' (also recipients, cc, subject) --source S --quote "...", at once, so the saved text is always the text in the mail tool |
+| a next check that came (brief CHECKS DUE) | after looking it up live: story or act with what was found, or act --action set_next_check --params '{"next_check": "<a later date>"}' --source S --quote "<what was checked>"; the end-of-run check lists any left |
 | a row in drafts.tsv and data/drafts/<id>.txt | right after the draft is created in the mail tool: draft --run R --item I --channel <channel> --kind reply/forward/new --replies-to <message id> --recipients '["..."]' [--cc '[...]'] --subject "..." --text-file <a file holding the full text> --mail-draft-id <the draft id in the mail tool>. The door refuses a second waiting draft for the same item |
 | the fate of a draft | act --run R --item <draft> --action mark_sent_as_is, or mark_sent_edited --params '{"sent_text": "<the full sent text>"}', or abandon --params '{"reason": "..."}' |
 | a question in questions.md | ask --run R --question "<the full question, options and recommendation>" --about I --source S --quote "..."; the owner's answer: act --item <question> --action record_decision --params '{"decision": "<the owner's words>"}' --source <session> --quote "<the owner's words>" |
@@ -55,6 +63,21 @@ create a channel or a job) needs the owner's own words quoted from the session: 
 | python3 tools/build_status.py | the same command still works; it calls mrun.py status --out view/status.md --live-check "<time and result of the live check>" |
 | state.json jobs.<id>.last_period | python3 tools/mdb.py --db db/marionette.db due-jobs lists every due period; after a job: python3 tools/mdb.py --db db/marionette.db do execute --actor claude --target <job> --run R, then do mark_period_done --actor program --target <job> --params '{"period": "<period>"}' --run R |
 | a new job the owner asks for | python3 tools/mdb.py --db db/marionette.db do create --type job --actor user --params '{"title": "<id>", "instructions": "<the text of jobs/<id>.md>", "schedule": {"every": "day", "at": "07:30"}}' --evidence '{"source": <session>, "quote": "<the owner's words>"}'; jobs.md and jobs/<id>.md are still written as before |
+
+## Issues register
+A problem in how Marionette itself works (a rule missed, a channel that cannot see something, a program defect) is an
+issue in the database, never a prompt copied between sessions.
+- report, always in the template: issue-new --run R --title "<short>" --reported-by "<owner | session of <date> |
+  run N | auditor>" --context "<where it showed: run, item, file>" --what-happened "<what went wrong, for whom, since
+  when>" --found "<what was found, each point quoting its source>" --owner-words "<the owner's words, verbatim;
+  required when the owner reported it>" --asked "<what must be done, step by step>" --source S --quote "...". The
+  program writes the template (writer, time, context, the four parts, and always the step: find the similar cases and
+  fix them all) and refuses a missing or one-word part. Status: reported.
+- show: issue I prints it exactly as stored; that output is what the owner is shown, never a text written beside it.
+- add: issue-append --run R --issue I --text "..." --source S --quote "...", never a second issue for one problem.
+- work: issue-act --run R --issue I --action start_work; close: --action resolve --params '{"resolution": "<how>",
+  "resolved_by": "<who>", "files_changed": "<files>"}' --source S --quote "..."; reopen if it comes back.
+- list: issues (open) or issues --all; the brief shows the open ones.
 
 ## What stays in files
 MANUAL.md, channels.md, jobs.md, jobs/, rules_by_subject.md, decisions.md, sessions/, runs.log, improvements.md,
