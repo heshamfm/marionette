@@ -1,5 +1,14 @@
 # Changelog
 
+## Test setup (2026-11-23, no change to the programs)
+
+The first test run of 1.7 on GitHub failed on Python 3.9 only, before any test ran: GitHub's
+`ubuntu-latest` runner had moved to Ubuntu 26.04, which offers no Python 3.9. Python 3.10 to 3.13
+passed every test. Marionette promises Python 3.9 or later, because that is the version macOS
+ships, so dropping 3.9 from the tests was not an option. The workflow now runs on `ubuntu-24.04`,
+which offers every version in the matrix, with a comment saying why. Installations in use need
+nothing: no program or data changed.
+
 ## 1.7 (2026-11-22)
 
 ### Why this release exists

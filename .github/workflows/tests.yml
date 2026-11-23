@@ -4,7 +4,11 @@ on:
   pull_request:
 jobs:
   tests:
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: on 2026-11-22 ubuntu-latest moved to Ubuntu 26.04, which has no
+    # Python 3.9, and the 3.9 job failed before any test ran. Marionette promises Python 3.9 or later
+    # (the version macOS ships), so 3.9 stays tested. Move this pin only to an image that still
+    # offers every version in the matrix.
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
