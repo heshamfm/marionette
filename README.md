@@ -8,12 +8,16 @@ turns every request and commitment into a tracked item, prepares reply drafts fo
 to review, and reminds you of what is late. Everything it remembers lives on your own computer, in one
 database file (SQLite) with a few plain files beside it.
 
-Version 1.7, 2026-11-22. What changed and why: `CHANGELOG.md`.
+Version 1.8, 2026-11-25. What changed and why: `CHANGELOG.md`.
 
 ## What you get
 
 - The skill folder `marionette/`: the skill itself (`SKILL.md`) and the setup
   templates it reads only on first use (`templates/`).
+- The panel (`marionette/templates/panel/panel.html`): one private page where you read each
+  report and act on items with a button (done, strike it out, postpone, hand over, answer,
+  delegate to Marionette, or give it your own instructions). Marionette applies what you submit
+  in your name; nothing on the page sends mail.
 - The database programs (`marionette/templates/db/`): one program that is the only way
   to write the memory, checks who may do what, refuses with a reason, and records every
   change in a history that is never changed or deleted. Nothing is ever deleted.
@@ -161,9 +165,9 @@ A decision that is a rule is not finished until it names the file that carries i
 ## Status
 
 Marionette is in daily use by its author, whose installation runs on the database.
-The 1.7 changes were applied first to the author's installation and checked on a copy of
-its database (about 450 items) before release; the upgrade tool was tested on a real 1.6
-installation built from this repository's history.
+The 1.8 changes were made first in the author's installation, tested on copies of its
+database (about 500 items), and then written for every installation; the upgrade tool was
+tested on a real 1.7 installation built from this repository's history.
 The move tool was tested on synthetic installations and on a copy of a real installation
 with about 400 items, 500 reading lines, 50 drafts and 40 reminders (the trial is
 described in `CHANGELOG.md`). Setup by other users has not been tested yet.
@@ -208,6 +212,10 @@ Run each from the repository root:
   its owner kept, a changed core program, a run writing, an upgrade stopped half way, a second
   apply, undo, and apply again (55 checks; the upgrade part needs
   the git history).
+- `python3 tests/test_release_1_8.py`: the guards of 1.8 (duplicate story lines, bulk checks,
+  for-information items, missed runs, unclassified sources, rule decisions without their file,
+  unreadable sources), the panel's data and its apply (each action, refusals, a batch applied
+  twice), and the upgrade of a real 1.7 installation (33 checks; the upgrade part needs the git history).
 - `python3 tests/test_brief.py` and `python3 tests/test_run_gate.py`: the files
   version of the brief and of the end-of-run check, for installations not yet moved.
 

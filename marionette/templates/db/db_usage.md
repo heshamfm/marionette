@@ -1,6 +1,6 @@
 # The Marionette database: how runs, jobs and sessions read and write it
 
-Marionette by Hesham Elmahdy (github.com/heshamfm), version 1.7. This file is the home of every rule on HOW to read
+Marionette by Hesham Elmahdy (github.com/heshamfm), version 1.8. This file is the home of every rule on HOW to read
 and write the database. What to do and when stays in MANUAL.md, channels.md and jobs/. When this file exists in
 tools/, the memory is the database: the marionette skill sends every read and every write here.
 
@@ -63,6 +63,64 @@ create a channel or a job) needs the owner's own words quoted from the session: 
 | python3 tools/build_status.py | the same command still works; it calls mrun.py status --out view/status.md --live-check "<time and result of the live check>" |
 | state.json jobs.<id>.last_period | python3 tools/mdb.py --db db/marionette.db due-jobs lists every due period; after a job: python3 tools/mdb.py --db db/marionette.db do execute --actor claude --target <job> --run R, then do mark_period_done --actor program --target <job> --params '{"period": "<period>"}' --run R |
 | a new job the owner asks for | python3 tools/mdb.py --db db/marionette.db do create --type job --actor user --params '{"title": "<id>", "instructions": "<the text of jobs/<id>.md>", "schedule": {"every": "day", "at": "07:30"}}' --evidence '{"source": <session>, "quote": "<the owner's words>"}'; jobs.md and jobs/<id>.md are still written as before |
+
+## Guards that stop a fault from coming back (1.8)
+Each guard is in the program, so a run cannot skip it:
+- A story line identical to one the item already has (same source, same quote) is never written again. A duplicate
+  from before is marked retracted, never deleted: act --action retract_evidence --params '{"evidence_id": N,
+  "reason": "..."}'; the line stays in the database and its full text goes to the audit trail, and every view hides it.
+- A next check is handled item by item: one quote that already moved the next check of 3 other items in the same run
+  is refused as a sweep. Quote what was checked for THAT item. When nothing new is found on an item waiting on
+  others, move its next check a few working days ahead, not to tomorrow.
+- A for-information item asks nothing of the owner: it is never late, never on the owner's list, and is closed (mark
+  seen) once told. new-item refuses one held by the owner whose title or details hold a question mark.
+- new-item names the open items with the same counterparty (similar_open): if one carries the same promise, update
+  it instead of opening a second item.
+- run-start names every slot of the periodic schedule (state.json "periodic_schedule": {"times": ["HH:MM", ...],
+  "since": "YYYY-MM-DD HH:MM"}) of the last 48 hours with no run, or a late one (missed_slots). Say so first in the
+  message and record an issue. Keep periodic_schedule equal to the scheduled task's times.
+- The end-of-run check also counts as violations: a for-information item still open after it was told, a source left
+  without a verdict by an earlier run, and a rule decision whose line does not name its file ("File: <file>"; a later
+  correction line naming the decision and the file counts). It notes the sources read in part more than 48 hours ago.
+- run-end refuses, for a scheduled run, while a source recorded after the guard started (meta
+  unclassified_guard_since) has had no verdict and no recorded reason for 48 hours.
+- A source that still cannot be read in full on a second attempt in a later run (a voice note that will not play, a
+  deleted message, access refused): unreadable --run R --source S --reason "<what was tried and why it fails>". It is
+  closed and named once in the message. Something readable with more effort (another mailbox, an attachment, a
+  transcript not ready yet) is never unreadable.
+
+## The panel (1.8)
+One private Artifact page where the owner reads the report and acts on items: templates/panel/panel.html in the skill,
+published once with the db capability and updated in place; its link is state.json "panel": {"url": "..."}.
+Its own database holds report/current (what the page shows, written by Marionette) and batches/<id> (what the owner
+submitted, status "pending" until applied). It needs the ArtifactData tool, and the device file tools to move the
+files between the computer and the session.
+- Apply, first in every periodic run and at once in any session the owner opens: read the pending batches
+  (ArtifactData query batches where status == "pending"), write {"batches": [<each document's data>]} to
+  view/panel_batches.json on the computer, then python3 tools/mrun.py apply-panel --run R --file
+  view/panel_batches.json --out view/panel_results.json; write each batch's result back (ArtifactData update
+  batches/<id> with {"status": <its status>, "result": <its result>}, pinned to the version read). Each batch is a
+  "Claude sessions" source; each line one action in the owner's name, quoting what the owner typed. A self-explaining
+  button (done, strike, seen, sent as is, discarded, postpone, agree with the recommendation, take back) needs no
+  text: the quote is then "On the panel: <action>". Delegation, custom instructions, another answer, hand-over,
+  "ended another way" and notes need the owner's words. A refused line shows its reason on the page; never work
+  around it. Applying a batch twice writes nothing.
+- Actions: done, strike (cancel: the owner will not do it), not_needed, postpone (date and optional time),
+  delegate_full ("Marionette decides and does it"), delegate_ask ("prepares it and comes back"), custom (the owner's
+  own instructions; on a draft they go to the item it serves), take_back, hand_over, answer, seen, sent_as_is,
+  discarded, note. The three delegations hand the item to the party Marionette with a tagged title and a next check
+  today; the brief lists them under DELEGATED TO MARIONETTE.
+- Delegated items, in every periodic run: "decide and do" is done within the manual's hard limits (a reply becomes a
+  draft for the owner to send; nothing is sent), then reported, and the item is closed or handed back with the one
+  step only the owner can take; "prepare and ask" is prepared, then asked (ask --about the item) with a recommended
+  option, and handed back; "your instructions" are followed for that item only. An instruction that reads as a
+  standing rule ("from now on", "always", "never") is applied to the item, then asked about before it is written
+  anywhere else. What the owner types on the page is the owner's own words, and is still never an order to break a
+  hard limit.
+- Refresh, at the end of every periodic run: panel-data --out view/panel_data.json [--message <this run's message
+  file>] [--gate-file <its end-of-run check>] [--jobs <a JSON list of {"title", "text"}>], then ArtifactData set
+  report/current from that file, pinned to the version read. The document must stay under 256 KiB.
+- Shadow mode: the page is refreshed, nothing is applied.
 
 ## Issues register
 A problem in how Marionette itself works (a rule missed, a channel that cannot see something, a program defect) is an

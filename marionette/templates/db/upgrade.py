@@ -59,7 +59,19 @@ PUBLISHED = {
 }
 PUBLISHED['1.6'] = dict(PUBLISHED['1.5'], **{
     'mrun.py': '1e1efac985744ef70b681083c0b9a6e5f6efef904d6e7e0a6807d393e4d31473'})
-RELEASES = ('1.5', '1.6', '1.7')   # in order; the data fixes of each release after the installed one are applied
+PUBLISHED['1.7'] = {
+    'mdb.py': '3ee2997a038b7c41214120e6e9bf4448ea8e0575350f0a8a2d7e33607cea78c8',
+    'mrun.py': '4288075e08c6b22deb075e6c9c0d755a8840b83ac6444603dda55e696ee244e7',
+    'schema_v0.1.sql': '467ac65fec46daad9918301652fec374d34173d9440b660c3921492cf01d4ec0',
+    'seed_v0.1.py': '4cead3b55fa55dab473215d104108d627be9512b95e88668e04451b09cd2cceb',
+    'migrate.py': '8c3fd0aa749a8d874306ba9056daa00f17ab589c8ce67265f5da4ebf98d311d2',
+    'upgrade.py': '72cb78f4bf7ecd127c8bbae5e19889967dc581f95fdbccb12cbac64d81239189',
+    'db_usage.md': '0ce64ccb8135f470d9f9bdc0ed3d0bec3e535f051eaab4c3811a56f88a09e895',
+    'brief.py': 'adfa4519e75e39babd15a4c1c7dc3224deec8ca042437af8d61ae5d95feefa2d',
+    'run_gate.py': '1c1710fd6f57778e6e1e62571685d4e927d7951863ace32accaead84a797947a',
+    'build_status.py': '09bd0fcc3146cc214d7290881af38242436e2e33abcf937bcc6887a00a23d93f',
+}
+RELEASES = ('1.5', '1.6', '1.7', '1.8')   # in order; the data fixes of each release after the installed one are applied
 
 
 def sha(path):
@@ -165,8 +177,11 @@ class Upgrade:
         new_types = [t[0] for t in seed.TYPES if t[0] not in types]
         new_rules = {(r[0], r[1], r[2], r[3]) for r in seed.ACTION_RULES} - rules
         undated = self.undated(c)
+        dups = c.execute('SELECT coalesce(sum(n-1),0) FROM (SELECT count(*) n FROM evidence '
+                         'GROUP BY thing_id, source_id, quote HAVING count(*)>1)').fetchone()[0]
         return {'types_added': new_types, 'permission_lines_added': len(new_rules),
-                'open_items_given_a_next_check': len(undated) if self.before('1.7') else 0}
+                'open_items_given_a_next_check': len(undated) if self.before('1.7') else 0,
+                'duplicate_story_lines_retracted': dups if self.before('1.8') else 0}
 
     def before(self, release):
         return RELEASES.index(self.installed) < RELEASES.index(release) if self.installed in RELEASES else True
@@ -274,6 +289,37 @@ class Upgrade:
             self.write_info(where, info)
             raise mdb.Refused(f'the upgrade stopped half way ({e}); run --undo to put back the copy taken before it')
 
+    def fixes_1_8(self, door, c, run):
+        """1.8: duplicate story lines are marked retracted (never deleted); the guards that start now are dated, so
+        they judge only what comes after the upgrade; the party that holds delegated items exists."""
+        out = []
+        n = 0
+        gone = door.retracted_ids()
+        for g in c.execute('SELECT thing_id, group_concat(id) ids FROM evidence GROUP BY thing_id, source_id, quote '
+                           'HAVING count(*)>1').fetchall():
+            keep = [i for i in sorted(int(x) for x in g['ids'].split(',')) if i not in gone]
+            for eid in keep[1:]:
+                door.do('retract_evidence', 'program', g['thing_id'], run=run, params={
+                    'evidence_id': eid, 'reason': f'duplicate of story line {keep[0]} (same source and quote), 1.8'})
+                n += 1
+        if n:
+            out.append(f'{n} duplicate story lines marked retracted (kept, hidden from views)')
+        last = 0
+        p = os.path.join(self.F, 'decisions.md')
+        if os.path.exists(p):
+            last = max([int(m) for m in re.findall(r'(?m)^- D(\d+) ', open(p, encoding='utf-8').read())] or [0])
+        c.execute('BEGIN IMMEDIATE')
+        c.execute("INSERT OR IGNORE INTO meta(key,value) VALUES('unclassified_guard_since',?)", (door.now()[:16],))
+        c.execute("INSERT OR IGNORE INTO meta(key,value) VALUES('decision_file_rule_from',?)", (str(last + 1),))
+        if not c.execute("SELECT value FROM meta WHERE key='marionette_party_id'").fetchone():
+            door.ctx = {'actor': 'program', 'action': 'create', 'run': run, 'evidence_id': None, 'held': None}
+            mar = door.new_thing('party', 'Marionette')
+            c.execute("INSERT INTO party(thing_id,kind,relation,status) VALUES(?,?,?,'confirmed')", (mar, 'system', 'self'))
+            c.execute("INSERT INTO meta(key,value) VALUES('marionette_party_id',?)", (str(mar),))
+            out.append('the party "Marionette" that holds delegated items was created')
+        c.execute('COMMIT')
+        return out
+
     @staticmethod
     def write_info(where, info):
         with open(os.path.join(where, 'upgrade.json'), 'w', encoding='utf-8') as f:
@@ -321,6 +367,8 @@ class Upgrade:
                 door.do('set_next_check', 'program', tid, params={'next_check': nxt}, run=run)
             if ids:
                 fixes.append(f'{len(ids)} open items had no due date and no next check; their next check is {nxt}')
+        if self.before('1.8'):
+            fixes += self.fixes_1_8(door, c, run)
         c.execute('BEGIN IMMEDIATE')
         c.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('marionette_version',?)", (self.target,))
         c.execute("INSERT OR REPLACE INTO meta(key,value) VALUES('upgraded_at',?)", (door.now()[:16],))

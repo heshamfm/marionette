@@ -27,6 +27,8 @@ jobs:
         run: python3 tests/test_db_move.py
       - name: release 1.7 and the upgrade
         run: python3 tests/test_release_1_7.py
+      - name: release 1.8, the guards, the panel and the upgrade
+        run: python3 tests/test_release_1_8.py
       - name: files version
         run: |
           python3 tests/test_brief.py

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Marionette by Hesham Elmahdy (github.com/heshamfm): the run-time layer, version 1.7.
+"""Marionette by Hesham Elmahdy (github.com/heshamfm): the run-time layer, version 1.8.
 
 What the scheduled runs and the sessions use in an installation that keeps its memory in the database,
 instead of editing the files (index.tsv, items/, drafts.tsv, questions.md, reminders/, data/disposition.tsv,
@@ -48,6 +48,11 @@ Usage (DB defaults to $MARIONETTE_DB, else ../db/marionette.db beside this progr
   mrun.py issues [--all]                                    the register
   mrun.py issue I                                           one issue exactly as stored (what the owner is shown)
   mrun.py version                                           the release of this database and of these programs
+ 1.8
+  mrun.py unreadable --run ID --source S --reason R          close a source that still cannot be read on a second try
+  mrun.py panel-data --out FILE [--message F] [--gate-file F] [--jobs F]   what the panel page shows
+  mrun.py apply-panel --run ID --file BATCHES --out RESULTS  apply what the owner submitted on the panel
+  mrun.py act --run ID --item I --action retract_evidence --params '{"evidence_id": N, "reason": "..."}'
  WHO is "me", a party number, or an email address of a recorded party.
 """
 import argparse
@@ -101,6 +106,17 @@ TEXT = {
   'issue_similar': 'Look for the similar cases of this problem in the rules, the programs and the data, and fix them all, not this one only.',
   'issue_no_words': 'The owner said nothing about it: it was found by {w}',
   'issue_line': 'Issue {i} ({s}): {t}', 'issue_add': 'Added {at} ({b}):', 'issue_res': 'How it was resolved: ',
+  'info_open': 'A for-information item is still open after it was told: mark it seen, or convert it when it asks something of you: {i} {t}',
+  'backlog': 'A source from an earlier run has no verdict since {d}: {i} {t}',
+  'no_file': 'Rule decision {d} does not name the file that carries it: add a correction line to decisions.md naming {d} and "File: <file>"',
+  'parked': '{n} sources were read in part more than 48 hours ago and are not finished; try the oldest again in this run and record what remains: {x}',
+  'unreadable_told': 'Could not be read after a second attempt (told once): {t}: {r}',
+  'panel_said': 'On the panel: {a}',
+  'tag_delegate_full': '[delegated: decide and do] ', 'tag_delegate_ask': '[delegated: prepare and ask] ',
+  'tag_custom': '[your instructions] ',
+  'a_done': 'done', 'a_strike': 'struck out, will not do it', 'a_seen': 'seen', 'a_sent_as_is': 'sent as is',
+  'a_discarded': 'discarded', 'a_postpone': 'postponed', 'a_answer': 'agreed with the recommendation',
+  'a_take_back': 'taken back',
  },
  'ar': {
   'you': 'أنت', 'open': 'مفتوح', 'waiting': 'بانتظار رد الآخرين', 'not_needed': 'أُغلق دون إجراء',
@@ -136,8 +152,33 @@ TEXT = {
   'issue_similar': 'ابحث عن الحالات المشابهة لهذه المشكلة في القواعد والبرامج والبيانات، وأصلحها كلها، لا هذه وحدها.',
   'issue_no_words': 'لا كلام له فيها: وجدها {w}',
   'issue_line': 'المشكلة {i} ({s}): {t}', 'issue_add': 'إضافة {at} ({b}):', 'issue_res': 'طريقة الحل: ',
+  'info_open': 'بند للعلم ما زال مفتوحًا بعد إبلاغه: أغلقه (اطُّلع عليه)، أو حوّله إلى قرار أو رد إن كان فيه خطوة على صاحب النظام: {i} {t}',
+  'backlog': 'مصدر من تشغيل سابق بلا حكم منذ {d}: {i} {t}',
+  'no_file': 'قرار القاعدة {d} لا يذكر الملف الذي يحملها: أضف سطر تصحيح إلى decisions.md يذكر {d} و«الملف: <الملف>»',
+  'parked': '{n} مصدرًا قُرئت جزئيًا قبل أكثر من 48 ساعة ولم تُكمل؛ أعد محاولة أقدمها في هذا التشغيل وسجّل ما بقي: {x}',
+  'unreadable_told': 'تعذرت قراءته بعد محاولة ثانية (يُذكر مرة): {t}: {r}',
+  'panel_said': 'من اللوحة: {a}',
+  'tag_delegate_full': '[فوّضتَه كاملًا] ', 'tag_delegate_ask': '[فوّضتَه مع الرجوع إليك] ', 'tag_custom': '[تعليماتك] ',
+  'a_done': 'أُنجز', 'a_strike': 'اشطبه: لن أعمل عليه', 'a_seen': 'اطّلعتُ عليه', 'a_sent_as_is': 'أرسلتُها كما هي',
+  'a_discarded': 'تخلّصتُ منها', 'a_postpone': 'أجِّل', 'a_answer': 'موافق على المقترح', 'a_take_back': 'أسترجعه لنفسي',
  },
 }
+
+
+UNREADABLE = 'UNREADABLE after a second attempt: '
+RETRACTED_SQL = "AND id NOT IN (SELECT CAST(new_value AS INTEGER) FROM audit WHERE action='retract_evidence')"
+
+
+def followup_of(db_path):
+    """The followup folder of a database at F/db/marionette.db."""
+    return os.path.dirname(os.path.dirname(os.path.abspath(db_path)))
+
+
+def read_state(db_path):
+    try:
+        return json.load(open(os.path.join(followup_of(db_path), 'state.json'), encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
 
 
 def default_db():
@@ -239,7 +280,7 @@ class Run:
     def last_event(self, tid):
         a = self.one("SELECT at, action, field, new_value, note FROM audit WHERE thing_id=? AND action NOT IN "
                      "('show') ORDER BY id DESC LIMIT 1", (tid,))
-        e = self.one('SELECT quote FROM evidence WHERE thing_id=? ORDER BY id DESC LIMIT 1', (tid,))
+        e = self.one("SELECT quote FROM evidence WHERE thing_id=? AND id NOT IN (SELECT CAST(new_value AS INTEGER) FROM audit WHERE action='retract_evidence') ORDER BY id DESC LIMIT 1", (tid,))
         q = (e[0] if e else '').replace('\n', ' ').replace('\t', ' | ')
         q = re.sub(r'^- ', '', q)
         return f"{a['at'][:16]} {q[:160]}" if a else q[:160]
@@ -258,6 +299,8 @@ class Run:
         """Late items with their reason. Questions to the user are not items: they are shown as questions."""
         out = {}
         for x in self.door.late():
+            if x['type'] == 'for_info':  # 1.8: nothing to do on it, so never late
+                continue
             d = json.loads(self.one('SELECT details FROM followup WHERE thing_id=?', (x['id'],))[0])
             if not (x['type'] == 'decision_needed' and (d.get('old_question') or d.get('kind') == 'question')):
                 out[x['id']] = x['why']
@@ -321,13 +364,22 @@ class Run:
                      f"{self.ar_type(r['id'], r['type'])} | due {r['due'] or '-'}{lt}{ncs} | "
                      f"{self.counterparty(r['id'], r['holder_id'])} | {r['title']} | last {self.last_event(r['id'])}")
         L.append(f'count check: open {len(rows)} listed')
-        mine = [r for r in rows if r['holder_id'] == self.me]
+        mine = [r for r in rows if r['holder_id'] == self.me and r['type'] != 'for_info']  # 1.8
         L.append('')
         L.append(f'## ON THE USER ({len(mine)}): the next step is the user\'s. The ONLY list a message may present as '
                  '"waiting for you" or "you need to do today"; an item held by anyone else is never there, whatever its '
                  'type or date')
         for r in mine:
             L.append(f"- {r['id']} | due {r['due'] or '-'}" + (' LATE' if r['id'] in late else '') + f" | {r['title']}")
+        mp = self.marionette_party()
+        dg = [r for r in rows if r['holder_id'] == mp]
+        L.append('')
+        L.append(f'## DELEGATED TO MARIONETTE ({len(dg)}): the user handed these over on the panel; the instructions '
+                 'are the latest story line. "decide and do": do it within the hard limits of the manual (a reply is a '
+                 'draft for the user to send) and report; "prepare and ask": prepare it, then ask before any step that '
+                 'acts; "your instructions": do what they say, for this item only')
+        for r in dg:
+            L.append(f"- {r['id']} | due {r['due'] or '-'} | {r['title']} | last {self.last_event(r['id'])[:200]}")
         cd = self.checks_due()
         L.append('')
         L.append(f'## CHECKS DUE ({len(cd)}): the next check came. Handle EVERY one in this run: look it up live, then '
@@ -383,7 +435,7 @@ class Run:
         out = self.door.show(tid)
         out['story'] = [{'quote': r['quote'], 'source': r['source_id'], 'position': r['position'],
                          'inferred': bool(r['inferred'])} for r in self.q(
-            'SELECT * FROM evidence WHERE thing_id=? ORDER BY id', (tid,))]
+            "SELECT * FROM evidence WHERE thing_id=? AND id NOT IN (SELECT CAST(new_value AS INTEGER) FROM audit WHERE action='retract_evidence') ORDER BY id", (tid,))]
         out['history'] = [f"{r['at'][:16]} {r['actor']} {r['action']} {r['field'] or ''} "
                           f"{(r['new_value'] or '')[:120]} {r['note'] or ''}".strip()
                           for r in self.q('SELECT * FROM audit WHERE thing_id=? ORDER BY id', (tid,))]
@@ -552,6 +604,27 @@ class Run:
         for x in undated:
             bad.append(self.t('undated_item', i=x['id'], t=x['title'][:90]))
         start = r['started'][:16]
+        # 1.8: a for-information item is closed once told; a source left unclassified by an earlier run; a rule
+        # decision that does not name its file; sources read in part and parked
+        for x in self.q("SELECT t.id, t.title FROM thing t JOIN followup f ON f.thing_id=t.id WHERE t.type='for_info' "
+                        "AND f.status IN ('open','new') AND t.created_at<? ORDER BY t.id", (start,)):
+            bad.append(self.t('info_open', i=x['id'], t=x['title'][:80]))
+        for x in self.q("SELECT t.id, t.title, t.created_at FROM source s JOIN thing t ON t.id=s.thing_id "
+                        "WHERE s.verdict IS NULL AND s.read_fail_reason IS NULL AND t.created_at<? ORDER BY t.id "
+                        "LIMIT 30", (start,)):
+            bad.append(self.t('backlog', d=x['created_at'][:16], i=x['id'], t=x['title'][:70]))
+        for d in self.decisions_without_file():
+            bad.append(self.t('no_file', d=d))
+        lim = (mdb.Door.as_time(self.now()) - datetime.timedelta(hours=48)).strftime('%Y-%m-%d %H:%M')
+        parked = self.q("SELECT t.id, t.title FROM source s JOIN thing t ON t.id=s.thing_id WHERE s.verdict IS NULL "
+                        "AND s.read_fail_reason IS NOT NULL AND s.read_fail_reason NOT LIKE 'UNREADABLE%' "
+                        "AND t.created_at<? ORDER BY t.id", (lim,))
+        if parked:
+            notes.append(self.t('parked', n=len(parked), x=self.t('sep').join(
+                f"{x['id']} {x['title'][:50]}" for x in parked[:10])))
+        for x in self.q("SELECT t.title, s.read_fail_reason FROM source s JOIN thing t ON t.id=s.thing_id WHERE "
+                        "s.run_id=? AND s.read_fail_reason LIKE 'UNREADABLE%'", (run,)):
+            notes.append(self.t('unreadable_told', t=x['title'][:80], r=x['read_fail_reason'][len(UNREADABLE):160]))
         print(self.t('gate_head', s=start, r=read, n=len(enabled)))
         for line in bad:
             print(self.t('violation') + line)
@@ -588,6 +661,177 @@ class Run:
             e['position'] = position
         return e
 
+    # ------------------------------------------------------------ the panel (1.8)
+    # page action -> door action. The text the owner typed is the quote; for the self-explaining buttons it may be
+    # empty, and the quote is then "On the panel: <action>".
+    PANEL_ACTIONS = {
+        'done': 'complete', 'not_needed': 'complete', 'strike': 'cancel', 'postpone': 'defer',
+        'hand_over': 'hand_over', 'answer': 'record_decision', 'seen': 'mark_seen', 'sent_as_is': 'send',
+        'discarded': 'abandon', 'note': 'add_evidence', 'delegate_full': 'hand_over', 'delegate_ask': 'hand_over',
+        'custom': 'hand_over', 'take_back': 'hand_over',
+    }
+    OPTIONAL_REASON = ('done', 'strike', 'seen', 'sent_as_is', 'discarded', 'postpone', 'answer', 'take_back')
+    TAGS = ('delegate_full', 'delegate_ask', 'custom')
+
+    def marionette_party(self):
+        v = self.door.meta('marionette_party_id')
+        return int(v) if v else -1
+
+    def strip_tag(self, title):
+        for lang in TEXT.values():
+            for k in ('tag_delegate_full', 'tag_delegate_ask', 'tag_custom'):
+                if title.startswith(lang[k]):
+                    return title[len(lang[k]):]
+        return title
+
+    def item_link(self, tid):
+        r = self.one("SELECT s.external_id, s.permalink, c.title FROM evidence e JOIN source s ON s.thing_id=e.source_id "
+                     "JOIN thing c ON c.id=s.channel_id WHERE e.thing_id=? ORDER BY e.id DESC LIMIT 1", (tid,))
+        if not r:
+            return None
+        if r['permalink'] and str(r['permalink']).startswith('https://'):
+            return r['permalink']
+        if r['title'] == 'gmail' and re.fullmatch(r'[0-9a-f]{12,20}', r['external_id'] or ''):
+            return 'https://mail.google.com/mail/u/0/#all/' + r['external_id']
+        return None
+
+    def panel_item(self, r, late):
+        d = json.loads(r['details'])
+        try:
+            t0 = self.door.first_seen(r['id'])
+        except Exception:
+            t0 = None
+        age = (mdb.Door.as_time(self.now()) - (t0 or mdb.Door.as_time(r['created_at'][:16]))).days
+        return {'id': r['id'], 'type': r['type'], 'type_label': self.ar_type(r['id'], r['type']), 'title': r['title'],
+                'status': r['status'], 'due': r['due'], 'next_check': r['next_check'], 'age_days': age,
+                'holder': self.name(r['holder_id']).strip() or '-', 'late': late.get(r['id']),
+                'last': self.last_event(r['id'])[:300], 'link': self.item_link(r['id']),
+                'question': d.get('question'), 'options': d.get('options'), 'recommendation': d.get('recommendation')}
+
+    def panel_data(self, run_message=None, gate_file=None, jobs=None):
+        """What the panel page shows: the sections of the run message, from the database (1.8)."""
+        late = self.late_map()
+        rows = list(self.items())
+        qs = [r for r in rows if self.is_question(r)]
+        its = [r for r in rows if not self.is_question(r)]
+        mp = self.marionette_party()
+        mine = [r for r in its if r['holder_id'] == self.me and r['type'] != 'for_info']
+        out = {'built_at': self.now()[:16], 'language': self.door.meta('language', 'en'), 'run_message': run_message,
+               'timezone': self.door.meta('timezone', 'UTC'), 'workdays': json.loads(self.door.meta('workdays', '[]') or '[]'),
+               'late': [self.panel_item(r, late) for r in mine if r['id'] in late],
+               'on_you': [self.panel_item(r, late) for r in mine if r['id'] not in late],
+               'questions': [self.panel_item(r, late) for r in qs],
+               'delegated': [self.panel_item(r, late) for r in its if r['holder_id'] == mp],
+               'for_info': [self.panel_item(r, late) for r in its if r['type'] == 'for_info' and r['holder_id'] == self.me],
+               'waiting': [self.panel_item(r, late) for r in its if r['holder_id'] not in (self.me, mp)],
+               'drafts': [], 'gate': [], 'jobs': jobs or []}
+        for d in self.q("SELECT t.id, t.title, t.created_at, f.details FROM followup f JOIN thing t ON t.id=f.thing_id "
+                        "WHERE t.type='draft' AND f.status='ready' ORDER BY t.id"):
+            dd = json.loads(d['details'])
+            out['drafts'].append({'id': d['id'], 'title': d['title'], 'created': d['created_at'][:16],
+                                  'to': dd.get('recipients'), 'subject': dd.get('subject'),
+                                  'text': (dd.get('text') or '')[:4000], 'serves': dd.get('serves')})
+        if gate_file and os.path.exists(gate_file):
+            out['gate'] = [x for x in open(gate_file, encoding='utf-8').read().splitlines() if x.strip()][:80]
+        return out
+
+    def apply_panel(self, run, batches_file):
+        """Apply what the owner submitted on the panel (1.8). Each batch becomes a session source; each line one door
+        action in the owner's name, quoting what was typed. A line already applied from the same batch is reported
+        and not written again. Every line reports ok, or the door's refusal."""
+        data = json.load(open(batches_file, encoding='utf-8'))
+        result = {}
+        for b in data.get('batches', []):
+            bid = str(b.get('id') or '').strip()
+            if not re.fullmatch(r'[A-Za-z0-9_.:-]{6,80}', bid):
+                result[bid or '?'] = {'status': 'refused', 'error': 'batch id missing or malformed'}
+                continue
+            lines = b.get('lines') or []
+            src = self.record(run, mdb.SESSIONS_CHANNEL, 'session', 'panel/' + bid,
+                              title=f"Panel {(b.get('submitted_at') or '')[:16]} ({len(lines)})",
+                              date=(b.get('submitted_at') or self.now())[:16],
+                              details={'kind': 'panel_batch', 'lines': lines}, read='full')
+            sid = src['id']
+            res = [self.apply_panel_line(run, sid, ln) for ln in lines]
+            ok = [x['ok'] for x in res]
+            try:
+                if any(ok):
+                    self.verdict(run, sid, 'linked')
+                elif res:
+                    self.verdict(run, sid, 'ignored', 'panel: every line of this batch was refused by the door')
+            except mdb.Refused:
+                pass
+            result[bid] = {'status': 'applied' if all(ok) else ('partly_refused' if any(ok) else 'refused'),
+                           'source': sid, 'lines': res, 'applied_at': self.now()[:16]}
+        return result
+
+    def apply_panel_line(self, run, sid, ln):
+        item, act, reason = ln.get('item'), ln.get('action'), str(ln.get('reason') or '').strip()
+        base = {'item': item, 'action': act}
+        try:
+            if act not in self.PANEL_ACTIONS:
+                raise mdb.Refused(f'unknown action "{act}"')
+            tid = int(item)
+            if len(reason) < 3:
+                if act in self.OPTIONAL_REASON and not (act == 'answer' and not ln.get('accepted')):
+                    reason = self.t('panel_said', a=self.t('a_' + act)) + (
+                        f" ({ln.get('date')})" if act == 'postpone' and ln.get('date') else '') + (
+                        f" ({ln.get('answer')})" if act == 'answer' else '')
+                else:
+                    raise mdb.Refused('this action needs the owner\'s words: a reason or instructions')
+            ty = self.one('SELECT t.type, t.title, f.due, f.status, f.details FROM thing t JOIN followup f '
+                          'ON f.thing_id=t.id WHERE t.id=?', (tid,))
+            if not ty:
+                raise mdb.Refused(f'no item {tid}')
+            if act == 'custom' and ty['type'] == 'draft':   # instructions on a draft go to the item it serves
+                tid = int(json.loads(ty['details'] or '{}').get('serves') or tid)
+                ty = self.one('SELECT t.type, t.title, f.due, f.status, f.details FROM thing t JOIN followup f '
+                              'ON f.thing_id=t.id WHERE t.id=?', (tid,))
+            if self.one("SELECT 1 FROM evidence WHERE thing_id=? AND source_id=? AND quote=?", (tid, sid, reason)):
+                return {**base, 'ok': True, 'already': True}
+            door_act, p = self.PANEL_ACTIONS[act], {}
+            if act in ('done', 'not_needed', 'strike') and ty['type'] == 'for_info':
+                door_act = 'mark_seen'        # a for-information item is closed by marking it seen
+            elif act == 'done':
+                p = {'close_reason': 'done'}
+            elif act == 'not_needed':
+                p = {'close_reason': 'not_needed'}
+            elif act == 'postpone':
+                if not re.fullmatch(r'\d{4}-\d{2}-\d{2}( \d{2}:\d{2})?', str(ln.get('date') or '')):
+                    raise mdb.Refused('postpone needs a date, and may give a time')
+                p = {'due': ln['date']}
+                if ty['status'] == 'deferred':
+                    door_act = 'change_due'   # already postponed: move its date
+            elif act == 'hand_over':
+                p = {'holder': self.who(ln.get('holder')), 'title': str(ln.get('title') or '').strip(),
+                     'due': ln.get('date') or None,
+                     'next_check': ln.get('next_check') or (datetime.date.fromisoformat(self.now()[:10])
+                                                          + datetime.timedelta(days=3)).isoformat()}
+                if not p['title']:
+                    raise mdb.Refused('a hand-over needs what the new holder does next')
+            elif act in self.TAGS:
+                p = {'holder': self.marionette_party(), 'title': self.t('tag_' + act) + self.strip_tag(ty['title']),
+                     'due': ty['due'], 'next_check': self.now()[:10]}
+            elif act == 'take_back':
+                p = {'holder': self.me, 'title': self.strip_tag(ty['title']), 'due': ty['due'],
+                     'next_check': self.now()[:10]}
+            elif act == 'answer':
+                p = {'decision': str(ln.get('answer') or reason)}
+            elif act == 'discarded':
+                p = {'reason': reason}
+            self.do(door_act, 'user', tid, params=p, evidence={'source': sid, 'quote': reason}, run=run)
+            return {**base, 'ok': True}
+        except mdb.Refused as e:
+            return {**base, 'ok': False, 'error': str(e)}
+        except (ValueError, TypeError, KeyError) as e:
+            return {**base, 'ok': False, 'error': f'bad line: {e}'}
+
+    @staticmethod
+    def write_json(path, obj):
+        with open(path, 'w', encoding='utf-8') as fh:
+            json.dump(obj, fh, ensure_ascii=False, indent=1)
+        return {'written': path, 'bytes': os.path.getsize(path)}
+
     def run_start(self, kind='schedule', title=None):
         for r in self.q("SELECT t.id, r.started FROM run r JOIN thing t ON t.id=r.thing_id WHERE r.status='running'"):
             last = self.one('SELECT max(at) FROM audit WHERE run_id=? OR thing_id=?', (r['id'], r['id']))[0] or r['started']
@@ -599,9 +843,98 @@ class Run:
                                                          'summary': {'closed_as_stale_by': 'run-start'}})
         res = self.do('start', 'program', type='run', params={'title': title or f'{kind} {self.now()[:16]}',
                                                                'trigger_kind': kind})
-        return {'run': res['id'], 'started': self.now()[:16]}
+        out = {'run': res['id'], 'started': self.now()[:16]}
+        if kind == 'schedule':
+            miss = self.missed_slots()
+            if miss:
+                out['missed_slots'] = miss
+                out['missed_rule'] = ('scheduled runs of the last 48 hours that did not happen or started late: say '
+                                      'so first in the message and record an issue unless one is open (1.8)')
+        return out
+
+    def missed_slots(self, hours=48):
+        """1.8: slots of the periodic schedule (state.json "periodic_schedule": {"times": ["10:57", ...],
+        "since": "YYYY-MM-DD HH:MM"}) in the last 48 hours with no scheduled run started within 30 minutes."""
+        st = read_state(self.door.path)
+        sched = st.get('periodic_schedule') or {}
+        times, since = sched.get('times') or [], sched.get('since') or '2000-01-01 00:00'
+        now = mdb.Door.as_time(self.now())
+        starts = [mdb.Door.as_time(r[0]) for r in self.q(
+            "SELECT started FROM run WHERE trigger_kind='schedule' AND started>=?",
+            ((now - datetime.timedelta(hours=hours + 4)).strftime('%Y-%m-%d %H:%M'),))]
+        out = []
+        for d in range(hours // 24 + 1, -1, -1):
+            day = (now - datetime.timedelta(days=d)).date()
+            for t in times:
+                slot = datetime.datetime.combine(day, datetime.time(*map(int, t.split(':'))))
+                if slot > now - datetime.timedelta(minutes=45) or slot < now - datetime.timedelta(hours=hours):
+                    continue
+                if slot.strftime('%Y-%m-%d %H:%M') < since:
+                    continue
+                near = [x for x in starts if datetime.timedelta(minutes=-5) <= x - slot <= datetime.timedelta(hours=3)]
+                if not near:
+                    out.append(f"{slot.strftime('%Y-%m-%d %H:%M')}: no run")
+                elif min(near) - slot > datetime.timedelta(minutes=30):
+                    out.append(f"{slot.strftime('%Y-%m-%d %H:%M')}: started late at {min(near).strftime('%H:%M')}")
+        return out
+
+    def stale_unclassified(self, hours=48):
+        """1.8: sources recorded since the guard started (meta unclassified_guard_since), older than 48 hours, with no
+        verdict and no recorded reason."""
+        since = self.door.meta('unclassified_guard_since')
+        if not since:
+            return []
+        lim = (mdb.Door.as_time(self.now()) - datetime.timedelta(hours=hours)).strftime('%Y-%m-%d %H:%M')
+        return self.q("SELECT t.id, t.title FROM source s JOIN thing t ON t.id=s.thing_id WHERE s.verdict IS NULL "
+                      "AND s.read_fail_reason IS NULL AND t.created_at>=? AND t.created_at<? ORDER BY t.id", (since, lim))
+
+    def decisions_without_file(self, first=None):
+        """1.8: rule decisions whose line in decisions.md does not end by naming the file that carries them, and that
+        no later line corrects (a later line naming the decision and the file). A rule line is one whose type column
+        reads rule or قاعدة; the file is named as "File:", "Files:", "الملف:" or "الملفات:"."""
+        path = os.path.join(followup_of(self.door.path), 'decisions.md')
+        if not os.path.exists(path):
+            return []
+        lines = open(path, encoding='utf-8').read().splitlines()
+        first = first if first is not None else int(self.door.meta('decision_file_rule_from', '0') or 0)
+        named = re.compile(r'(\bfiles?:|الملفا?ت?:)', re.I)
+        out = []
+        for i, ln in enumerate(lines):
+            m = re.match(r'^- D(\d+) \| [^|]+\| *(rule|قاعدة) *\|', ln, re.I)
+            if not m or int(m.group(1)) < first or named.search(ln[-400:]):
+                continue
+            tag = 'D' + m.group(1)
+            if any(re.search(r'\b' + tag + r'\b', x) and named.search(x) for x in lines[i + 1:]):
+                continue
+            out.append(tag)
+        return out
+
+    def unreadable(self, run, source, reason):
+        """1.8: a source that still cannot be read in full on a second attempt in a later run (a voice note that will
+        not play, a deleted message, access refused) is closed as unreadable with what was tried, and told once."""
+        src = int(source)
+        r = self.one('SELECT s.verdict, s.read_state, t.created_at FROM source s JOIN thing t ON t.id=s.thing_id '
+                     'WHERE s.thing_id=?', (src,))
+        if not r:
+            raise mdb.Refused(f'{src} is not a source')
+        if r['verdict'] is not None or r['read_state'] == 'full':
+            raise mdb.Refused('this source was read in full or has a verdict: give it a verdict instead')
+        started = self.one('SELECT started FROM run WHERE thing_id=?', (run,))[0]
+        if r['created_at'] >= started:
+            raise mdb.Refused('try again in a later run first: unreadable is only for a second attempt')
+        if len((reason or '').strip()) < 15:
+            raise mdb.Refused('say what was tried and why it cannot be read')
+        return self.do('read', 'claude', src, params={'read_state': 'failed', 'reason': UNREADABLE + reason.strip()},
+                       run=run)
 
     def run_end(self, run, failed=False, summary=None):
+        kind = self.one('SELECT trigger_kind FROM run WHERE thing_id=?', (run,))
+        if not failed and kind and kind[0] == 'schedule':
+            old = self.stale_unclassified()
+            if old:
+                raise mdb.Refused('sources read more than 48 hours ago still have no verdict and no recorded reason; '
+                                  'read each in full and give its verdict, or record why it cannot be read: '
+                                  + '; '.join(f"{x['id']} {x['title'][:60]}" for x in old[:15]))
         p = {'failed': bool(failed)}
         if summary:
             p['summary'] = summary
@@ -680,7 +1013,26 @@ class Run:
             p['requested_by'] = self.who(requested_by)
         if inferred:
             p['_inferred'] = inferred
-        return self.do('create', 'claude', type=type, params=p, evidence=self.ev(source, quote), run=run)
+        # 1.8: a question or request to the user is never "for information"
+        if type == 'for_info' and p['holder'] == self.me and re.search(
+                r'[?؟]', title + json.dumps(details or {}, ensure_ascii=False)):
+            raise mdb.Refused('this item asks the user something (it holds a question mark): make it decision_needed '
+                              'or reply_needed; for_info is only for what asks nothing of the user')
+        res = self.do('create', 'claude', type=type, params=p, evidence=self.ev(source, quote), run=run)
+        # 1.8: the open items with the same counterparty, so the same promise is never opened twice
+        parties = {x for x in (p['holder'], p.get('promised_by'), p.get('requested_by')) if x and x != self.me}
+        if parties:
+            ph = ','.join('?' * len(parties))
+            sim = self.q(f"SELECT DISTINCT t.id, t.title FROM thing t JOIN followup f ON f.thing_id=t.id "
+                         f"LEFT JOIN link l ON l.from_id=t.id AND l.role IN ('promised_by','requested_by') "
+                         f"WHERE f.status IN ('open','new','deferred') AND t.id<>? AND t.type IN "
+                         f"('commitment','reply_needed','decision_needed','for_info') AND "
+                         f"(f.holder_id IN ({ph}) OR l.to_id IN ({ph}))", (res['id'], *parties, *parties))
+            if sim:
+                res['similar_open'] = [f"{x['id']}: {x['title'][:100]}" for x in sim]
+                res['similar_rule'] = ('same counterparty: if one of these carries the same promise, merge into it '
+                                       '(old version kept in the story); if unsure, keep both and ask the user')
+        return res
 
     def ask(self, run, question, source, quote, about=None, options=None, recommend=None, due=None):
         d = {'question': question, 'kind': 'question', 'asked_at': self.now()[:16]}
@@ -697,8 +1049,12 @@ class Run:
         return res
 
     def story(self, run, item, source, quote, position=None):
-        return self.do('add_evidence', 'claude', self.resolve_item(item), evidence=self.ev(source, quote, position),
-                       run=run)
+        tid = self.resolve_item(item)
+        dup = self.one("SELECT id FROM evidence WHERE thing_id=? AND source_id=? AND quote=? " + RETRACTED_SQL,
+                       (tid, int(source), quote))
+        if dup:  # 1.8: the same line twice is never written again
+            return {'id': tid, 'already': True, 'evidence': dup[0]}
+        return self.do('add_evidence', 'claude', tid, evidence=self.ev(source, quote, position), run=run)
 
     def act(self, run, item, action, params=None, source=None, quote=None, actor='claude'):
         return self.do(action, actor, self.resolve_item(item), params=params or {},
@@ -888,6 +1244,15 @@ def main(argv=None):
     s = sub.add_parser('issues'); s.add_argument('--all', action='store_true')
     s = sub.add_parser('issue'); s.add_argument('id')
     sub.add_parser('version')
+    s = sub.add_parser('unreadable')
+    for k in ('--run', '--source', '--reason'):
+        s.add_argument(k, required=True)
+    s = sub.add_parser('panel-data'); s.add_argument('--out', required=True)
+    for k in ('--message', '--gate-file', '--jobs'):
+        s.add_argument(k)
+    s = sub.add_parser('apply-panel')
+    for k in ('--run', '--file', '--out'):
+        s.add_argument(k, required=True)
     s = sub.add_parser('remind')
     for k in ('--run', '--text', '--due', '--session', '--quote'):
         s.add_argument(k, required=True)
@@ -936,6 +1301,11 @@ def main(argv=None):
             'issue-act': lambda: R.issue_act(run, a.issue, a.action, J(a.params), a.source, a.quote, a.actor),
             'issues': lambda: R.issues(a.all),
             'version': lambda: R.version(),
+            'unreadable': lambda: R.unreadable(run, a.source, a.reason),
+            'panel-data': lambda: R.write_json(a.out, R.panel_data(
+                open(a.message, encoding='utf-8').read() if a.message else None, a.gate_file,
+                json.load(open(a.jobs, encoding='utf-8')) if a.jobs else None)),
+            'apply-panel': lambda: R.write_json(a.out, R.apply_panel(run, a.file)),
         }[c]()
         print(json.dumps(out, ensure_ascii=False, indent=1, default=str))
         return 0

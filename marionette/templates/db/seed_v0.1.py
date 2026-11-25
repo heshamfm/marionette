@@ -78,6 +78,7 @@ ACTION_AR = {
     'start': 'بدء', 'close': 'إغلاق', 'link': 'ربط شيء بشيء', 'add_evidence': 'إضافة دليل',
     'confirm_values': 'تأكيد قيم وضعها Claude استنتاجًا',
     'start_work': 'بدء العمل على المشكلة', 'resolve': 'حل المشكلة', 'append': 'إضافة نص إلى المشكلة',
+    'retract_evidence': 'سحب سطر قصة مكرر دون حذفه',
 }
 
 U, C, P = 'user', 'claude', 'program'
@@ -223,6 +224,8 @@ A(R('source', 'confirm_values', [C, U]))
 # Any thing
 A(R('*', 'link', [C, U]))
 A(R('*', 'add_evidence', [C, U]))
+# 1.8: a duplicate story line is marked retracted, never deleted; the reason is a parameter
+A(R('*', 'retract_evidence', [C, U, P], evidence_for=()))
 
 
 def seed(conn):

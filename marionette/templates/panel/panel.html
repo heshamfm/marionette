@@ -1,0 +1,406 @@
+<title>Marionette Panel</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600&family=Readex+Pro:wght@500;600&display=swap">
+<style>
+/* Layout: one reading column, sections stacked, a "done today" section last, a sticky submit bar; RTL or LTR by the owner's language, phone first. */
+:root{
+  --bg:#f6f5f1; --surface:#ffffff; --ink:#1e2320; --muted:#5f6862; --line:#dcdcd3;
+  --accent:#1f6f5c; --accent-ink:#ffffff; --late:#b3412e; --late-bg:#fbe9e4; --ok:#2e7d4a; --ok-bg:#e5f3e9;
+  --warn-bg:#fff4dc; --chip:#eef0ea;
+  --f-body:"IBM Plex Sans Arabic", "Noto Naskh Arabic", Tahoma, sans-serif;
+  --f-head:"Readex Pro", "IBM Plex Sans Arabic", Tahoma, sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#141816; --surface:#1d2320; --ink:#e7ebe7; --muted:#9aa59e; --line:#2f3833;
+  --accent:#5bbf9f; --accent-ink:#0d1411; --late:#f08a75; --late-bg:#3a201b; --ok:#7fd39b; --ok-bg:#1b3324;
+  --warn-bg:#3a3220; --chip:#26302b; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#141816; --surface:#1d2320; --ink:#e7ebe7; --muted:#9aa59e; --line:#2f3833;
+  --accent:#5bbf9f; --accent-ink:#0d1411; --late:#f08a75; --late-bg:#3a201b; --ok:#7fd39b; --ok-bg:#1b3324;
+  --warn-bg:#3a3220; --chip:#26302b; color-scheme:dark}
+html[dir="rtl"]{direction:rtl}
+.undo{font:inherit;font-size:.8rem;border:0;background:none;color:var(--accent);cursor:pointer;padding:0;text-decoration:underline}
+.item.doneItem{opacity:.85}
+.item.doneItem .t{text-decoration:line-through;text-decoration-thickness:1px}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.7;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 110px}
+main{max-width:760px;margin-inline:auto;display:flex;flex-direction:column;gap:22px}
+h1{font-family:var(--f-head);font-size:1.5rem;margin:0;text-wrap:balance}
+h2{font-family:var(--f-head);font-size:1.08rem;margin:0;display:flex;gap:8px;align-items:baseline}
+h2 .n{font-family:var(--f-body);font-size:.85rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.sub{color:var(--muted);font-size:.88rem}
+header{display:flex;flex-direction:column;gap:4px}
+section{display:flex;flex-direction:column;gap:10px}
+details>summary{cursor:pointer;list-style:none}
+details>summary::-webkit-details-marker{display:none}
+details>summary h2::before{content:"◂";font-size:.8rem;color:var(--muted);transition:transform .15s}
+details[open]>summary h2::before{transform:rotate(-90deg)}
+.list{display:flex;flex-direction:column;gap:10px}
+.item{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.item.sel{border-color:var(--accent)}
+.item.isLate{border-inline-start:4px solid var(--late)}
+.t{font-weight:600;overflow-wrap:anywhere}
+.meta{display:flex;flex-wrap:wrap;gap:6px;font-size:.8rem;color:var(--muted)}
+.chip{background:var(--chip);border-radius:999px;padding:1px 9px}
+.chip.late{background:var(--late-bg);color:var(--late);font-weight:600}
+.last{font-size:.86rem;color:var(--muted);overflow-wrap:anywhere}
+.q{white-space:pre-wrap;font-size:.92rem;overflow-wrap:anywhere}
+a{color:var(--accent)}
+.acts{display:flex;flex-wrap:wrap;gap:6px}
+.acts button{font:inherit;font-size:.84rem;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:999px;padding:3px 12px;cursor:pointer}
+.acts button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.acts button:focus-visible,.bar button:focus-visible,textarea:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.form{display:flex;flex-direction:column;gap:6px}
+.form label{font-size:.82rem;color:var(--muted)}
+textarea,input,select{font:inherit;font-size:.92rem;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:6px 9px;width:100%;box-sizing:border-box}
+textarea{min-height:58px;resize:vertical}
+.need{border-color:var(--late)}
+.res{font-size:.84rem;border-radius:8px;padding:4px 10px}
+.res.ok{background:var(--ok-bg);color:var(--ok)}
+.res.no{background:var(--late-bg);color:var(--late)}
+.res.wait{background:var(--warn-bg);color:var(--ink)}
+.empty{color:var(--muted);font-size:.9rem;background:var(--surface);border:1px dashed var(--line);border-radius:10px;padding:14px}
+pre.msg{white-space:pre-wrap;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px;font-family:var(--f-body);font-size:.88rem;overflow-x:auto;margin:0}
+.bar{position:fixed;inset:auto 0 0 0;background:var(--surface);border-top:1px solid var(--line);
+  padding:10px max(16px,env(safe-area-inset-right,0px)) calc(10px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));
+  display:flex;gap:12px;align-items:center;justify-content:space-between;z-index:5}
+.bar .info{font-size:.86rem;color:var(--muted);min-width:0}
+.bar button{font:inherit;font-weight:600;background:var(--accent);color:var(--accent-ink);border:0;border-radius:8px;padding:8px 20px;cursor:pointer}
+.bar button:disabled{opacity:.45;cursor:not-allowed}
+.status{font-size:.85rem;padding:8px 12px;border-radius:8px;background:var(--warn-bg)}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+
+<main id="app">
+  <header>
+    <h1 id="h1">Marionette</h1>
+    <div class="sub" id="built"></div>
+  </header>
+  <div class="status" id="status" hidden></div>
+  <div id="sections"></div>
+</main>
+<div class="bar">
+  <div class="info" id="barInfo"></div>
+  <button id="submit" type="button" disabled></button>
+</div>
+
+<script>
+/* Marionette by Hesham Elmahdy (github.com/heshamfm): the panel page (release 1.8).
+   Data: report/current (written by Marionette with mrun.py panel-data); batches/<id> (written here on Submit,
+   applied by mrun.py apply-panel, results written back). The language, time zone and working days come from the data. */
+(() => {
+  const DEFAULT_LANG = "en";
+  const DRAFT_KEY = "marionette-panel-draft-v2";
+  const $ = (id) => document.getElementById(id);
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  const safeUrl = (u) => (typeof u === "string" && u.startsWith("https://")) ? u : null;
+
+  const LBL = {
+    en: {
+      title: "Marionette Panel", loading: "Loading…", built: (t, z) => `Updated ${t} (${z})`, submit: "Submit",
+      bar0: "Pick an action for an item, then submit.", barBad: (n, b) => `${n} selected, ${b} missing instructions, a reason or a field.`,
+      barOk: (n) => `${n} selected and ready.`, empty: "No data yet. Marionette writes it at its next periodic run, then the items appear with their buttons.",
+      nothing: "Nothing here now.", runMsg: "The full run message", jobs: "Job outputs today", gate: "End-of-run check",
+      sections: { late: "Your late commitments", on_you: "Waiting for you now", questions: "Questions for your decision", drafts: "Drafts waiting for you",
+        delegated: "Delegated to Marionette", for_info: "For information", waiting: "Waiting on others", done: "Done today" },
+      acts: { done: "Done", strike: "Strike it out: I will not do it", not_needed: "Ended another way", postpone: "Postpone",
+        delegate_full: "Marionette decides and does it", delegate_ask: "Marionette prepares it and comes back to me", custom: "Custom instructions",
+        hand_over: "Hand it to someone", note: "Note only", seen: "Seen", accept: "Agree with the recommendation", answer: "Another answer",
+        sent_as_is: "I sent it as is", discarded: "I discarded it", take_back: "Take it back", strike_short: "Strike it out",
+        delegate_info: "Marionette checks and comes back", decide: "You decide", follow: "Marionette follows it up", new_instr: "New instructions", more: "More instructions",
+        change_holder: "Change who holds it" },
+      reason: { delegate_full: ["Your instructions to Marionette", "What exactly do you want?"], delegate_ask: ["What should it prepare?", "For example: read the offer and tell me what you think before any reply"],
+        take_back: ["Why take it back?", "For example: I will handle it myself"], custom: ["Your instructions to Marionette", "Write exactly what you want. It applies to this item only; a standing rule is asked about first."],
+        hand_over: ["Your note", "For example: agreed in today's meeting"], not_needed: ["How did it end?", "For example: a colleague handled it by phone"],
+        answer: ["Your note", "Why this answer?"], note: ["Your note", "Kept in the item's story"], _: ["Reason", "Reason (required), kept word for word in the item's story."] },
+      optional: "Note (optional)", required: "(required)", optionalPh: "Optional note. The button says enough.",
+      chips: { done: ["I did it myself", "Done in a meeting", "Done by phone or chat"], strike: ["Not important", "Not mine", "I will not work on it"],
+        not_needed: ["Someone else handled it", "Things changed"], seen: ["Read it"], sent_as_is: ["Sent it"], discarded: ["No longer suitable", "Replied another way"],
+        accept: ["Agreed"], postpone: ["Not now", "Waiting for something first"] },
+      hint: "Marionette never sends mail in your name: it writes the draft and the send button stays yours.",
+      quick: ["In 3 hours", "Tomorrow morning", "End of this week", "Next week", "In two weeks"], when: "When?", orPick: "Or pick a day and time", backOn: "Comes back to you: ",
+      late: "late", due: "due ", today: "today", ago: (n) => `${n} days ago`, at: "with ", to: "to ", rec: "Recommended: ", draftText: "Draft text", open: "Open the message",
+      yourAnswer: "Your answer: ", who: "To whom?", whoPh: "Email of the new holder", next: "Their next step", nextPh: "What do they do next?", hdate: "Their date (optional)",
+      option: "Option", pick: "Pick an option…", ans: "Your answer", ansPh: "Your answer",
+      wait: "Submitted; waiting to be applied by the next run or a session.", ok: "✓ applied", no: "Not applied: ", unknown: "unknown reason", undo: "Undo",
+      sending: "Submitting…", sent: (n) => `Submitted ${n}. The next run or any session applies them; the result shows beside each item.`,
+      sendFail: (m) => `Not saved: ${m}. Your choices are kept in this browser; try again.`, noData: "No data yet. Open the page from your Claude account.",
+      noDb: "This page needs its own database and cannot run in this view. Open it from your Claude account.", readFail: (m) => `Could not read the data: ${m}`,
+    },
+    ar: {
+      title: "لوحة ماريونيت", loading: "تُحمَّل البيانات…", built: (t, z) => `آخر تحديث ${t} (${z})`, submit: "إرسال",
+      bar0: "اختر إجراءً لبند، ثم أرسل.", barBad: (n, b) => `${n} مختارة، ${b} منها ينقصها توجيه أو سبب أو حقل مطلوب.`,
+      barOk: (n) => `${n} مختارة وجاهزة للإرسال.`, empty: "لا بيانات بعد. يكتبها ماريونيت في تشغيله الدوري التالي، ثم تظهر البنود بأزرارها.",
+      nothing: "لا شيء هنا الآن.", runMsg: "رسالة التشغيل كاملة", jobs: "مخرجات أعمال اليوم", gate: "فحص نهاية التشغيل",
+      sections: { late: "التزاماتك المتأخرة", on_you: "عليك الآن", questions: "أسئلة تنتظر قرارك", drafts: "مسودات تنتظرك",
+        delegated: "فوّضتَها لماريونيت", for_info: "للعلم", waiting: "بانتظار الآخرين", done: "تم اليوم" },
+      acts: { done: "أُنجز", strike: "اشطبه: لن أعمل عليه", not_needed: "انتهى من طريق آخر", postpone: "أجِّل",
+        delegate_full: "ماريونيت يقرر وينفّذ", delegate_ask: "ماريونيت يحضّره ويرجع إليّ", custom: "تعليمات خاصة",
+        hand_over: "سلِّمه لشخص", note: "ملاحظة فقط", seen: "اطّلعتُ عليه", accept: "موافق على المقترح", answer: "جواب آخر",
+        sent_as_is: "أرسلتُها كما هي", discarded: "تخلّصتُ منها", take_back: "أسترجعه لنفسي", strike_short: "اشطبه",
+        delegate_info: "ماريونيت يتحقق ويرجع إليّ", decide: "قرّر أنت", follow: "ماريونيت يتابعه بنفسه", new_instr: "تعليمات جديدة", more: "توجيه إضافي",
+        change_holder: "غيّر صاحب الخطوة" },
+      reason: { delegate_full: ["توجيهاتك لماريونيت", "ماذا تريد بالضبط؟"], delegate_ask: ["ماذا يحضّر لك؟", "مثل: اقرأ العرض وقل لي رأيك قبل أي رد"],
+        take_back: ["لماذا تسترجعه؟", "مثل: سأتولاه بنفسي"], custom: ["تعليماتك لماريونيت", "اكتب ما تريده بالضبط. يُنفَّذ على هذا البند وحده، وإن كان قاعدة عامة يُسأل عنها أولًا."],
+        hand_over: ["ملاحظتك", "مثل: اتفقنا في اجتماع اليوم"], not_needed: ["كيف انتهى؟", "مثل: تولاه زميل بالهاتف"],
+        answer: ["ملاحظتك", "لماذا هذا الجواب؟"], note: ["ملاحظتك", "تُحفظ في قصة البند"], _: ["السبب", "السبب (إلزامي). يُحفظ بنصه في قصة البند."] },
+      optional: "ملاحظة (اختيارية)", required: "(إلزامي)", optionalPh: "ملاحظة اختيارية. الزر وحده يكفي.",
+      chips: { done: ["أنجزتُه بنفسي", "تم في اجتماع", "تم بالهاتف أو المحادثة"], strike: ["غير مهم", "لا يخصني", "لن أعمل عليه"],
+        not_needed: ["تولاه غيري", "تغير الوضع"], seen: ["قرأتُه"], sent_as_is: ["أرسلتُها"], discarded: ["لم تعد مناسبة", "رددتُ بطريق آخر"],
+        accept: ["موافق"], postpone: ["ليس الآن", "أنتظر شيئًا أولًا"] },
+      hint: "لا يرسل ماريونيت بريدًا باسمك: يكتب المسودة وتبقى ضغطة الإرسال لك.",
+      quick: ["بعد 3 ساعات", "غدًا صباحًا", "آخر هذا الأسبوع", "الأسبوع القادم", "بعد أسبوعين"], when: "متى؟", orPick: "أو اختر يومًا ووقتًا", backOn: "سيعود إليك: ",
+      late: "متأخر", due: "الموعد ", today: "اليوم", ago: (n) => `منذ ${n} يومًا`, at: "عند ", to: "إلى ", rec: "المقترح: ", draftText: "نص المسودة", open: "افتح الرسالة",
+      yourAnswer: "جوابك: ", who: "إلى من؟", whoPh: "البريد الإلكتروني لصاحب الخطوة", next: "الخطوة التالية عنده", nextPh: "ما خطوته التالية؟", hdate: "موعده (اختياري)",
+      option: "الخيار", pick: "اختر خيارًا…", ans: "جوابك", ansPh: "جوابك",
+      wait: "أُرسل، وينتظر التطبيق في التشغيل التالي أو جلسة.", ok: "✓ طُبّق", no: "لم يُطبَّق: ", unknown: "سبب غير معروف", undo: "تراجع",
+      sending: "يُرسَل…", sent: (n) => `أُرسل ${n} بند. يطبّقها التشغيل التالي أو أي جلسة تفتحها، وتظهر النتيجة بجانب كل بند.`,
+      sendFail: (m) => `لم يُحفظ الإرسال: ${m}. اختياراتك محفوظة في هذا المتصفح؛ حاول مرة أخرى.`, noData: "لم تصل البيانات بعد. افتح الصفحة من حسابك في Claude.",
+      noDb: "هذه الصفحة تحتاج قاعدة بياناتها، ولا تعمل في هذا العرض. افتحها من حسابك في Claude.", readFail: (m) => `تعذّرت قراءة البيانات: ${m}`,
+    },
+  };
+  let L = LBL[DEFAULT_LANG] || LBL.en;
+  function setLang(code) {
+    L = LBL[code] || LBL[DEFAULT_LANG] || LBL.en;
+    document.documentElement.dir = (code || DEFAULT_LANG) === "ar" ? "rtl" : "ltr";
+    document.documentElement.lang = code || DEFAULT_LANG;
+    $("h1").textContent = L.title; $("submit").textContent = L.submit;
+  }
+  setLang(DEFAULT_LANG); $("built").textContent = L.loading;
+
+  // what each kind of item may do; the door decides in the end, and a refusal comes back beside the item
+  const ACTS = {
+    mine: ["done","strike","not_needed","postpone","delegate_full","delegate_ask","custom","hand_over","note"],
+    info: ["seen",["delegate_ask","delegate_info"],"custom","note"],
+    question: ["accept","answer",["delegate_full","decide"],"note"],
+    draft: ["sent_as_is","discarded","custom"],
+    waiting: ["done",["strike","strike_short"],"not_needed","postpone",["delegate_full","follow"],"custom",["hand_over","change_holder"],"note"],
+    delegated: ["take_back","done",["strike","strike_short"],["custom","new_instr"],["note","more"]],
+  };
+  const SECTIONS = [["late","mine",true],["on_you","mine",true],["questions","question",true],["drafts","draft",true],
+                    ["delegated","delegated",true],["for_info","info",true],["waiting","waiting",false]];
+  const OPTIONAL = new Set(["done","strike","seen","sent_as_is","discarded","postpone","accept","take_back"]);
+
+  // quick postpone times in the owner's zone and working week
+  function zoneNow(tz) { const p = new Intl.DateTimeFormat("en-CA",{timeZone:tz||"UTC",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(new Date()); const g = t => Number(p.find(x => x.type === t).value); return new Date(Date.UTC(g("year"), g("month")-1, g("day"), g("hour") % 24, g("minute"))); }
+  const fmt = (d) => d.toISOString().slice(0,10) + " " + d.toISOString().slice(11,16);
+  const addDays = (d, n) => new Date(d.getTime() + n * 86400000);
+  const at = (d, h) => { const x = new Date(d); x.setUTCHours(h, 0, 0, 0); return x; };
+  const DAYS = ["sun","mon","tue","wed","thu","fri","sat"];
+  function quickTimes() {
+    const tz = report && report.timezone, wd = (report && Array.isArray(report.workdays) && report.workdays.length) ? report.workdays : ["mon","tue","wed","thu","fri"];
+    const isWork = (d) => wd.includes(DAYS[d.getUTCDay()]);
+    const now = zoneNow(tz);
+    const later = new Date(now.getTime() + 3 * 3600000); later.setUTCMinutes(0);
+    let tm = addDays(now, 1); while (!isWork(tm)) tm = addDays(tm, 1);
+    const lastWork = DAYS.indexOf(wd[wd.length - 1]); const firstWork = DAYS.indexOf(wd[0]);
+    let end = new Date(now); let k = 0; while (DAYS[end.getUTCDay()] !== DAYS[lastWork] && k < 7) { end = addDays(end, 1); k++; }
+    if (k === 0 && now.getUTCHours() >= 12) end = addDays(end, 7);
+    let nw = addDays(now, 1); k = 0; while (DAYS[nw.getUTCDay()] !== DAYS[firstWork] && k < 7) { nw = addDays(nw, 1); k++; }
+    return [fmt(later), fmt(at(tm, 9)), fmt(at(end, 9)), fmt(at(nw, 9)), fmt(at(addDays(nw, 7), 9))].map((v, i) => [L.quick[i], v]);
+  }
+
+  let db = null, report = null, results = {}, batches = [];
+  let sel = {};
+  try { sel = JSON.parse(localStorage.getItem(DRAFT_KEY) || "{}") || {}; } catch (e) { sel = {}; }
+  const saveDraft = () => { try { localStorage.setItem(DRAFT_KEY, JSON.stringify(sel)); } catch (e) {} };
+
+  function lineValid(s) {
+    if (!s || !s.action) return false;
+    if (!OPTIONAL.has(s.action) && (!s.reason || s.reason.trim().length < 3)) return false;
+    if (s.action === "postpone" && !/^\d{4}-\d{2}-\d{2}( \d{2}:\d{2})?$/.test(s.date || "")) return false;
+    if (s.action === "hand_over" && (!(s.holder || "").includes("@") || !(s.title || "").trim())) return false;
+    if ((s.action === "answer" || s.action === "accept") && !(s.answer || "").trim()) return false;
+    return true;
+  }
+  function updateBar() {
+    const ids = Object.keys(sel).filter(k => sel[k] && sel[k].action);
+    const bad = ids.filter(k => !lineValid(sel[k])).length;
+    $("submit").disabled = ids.length === 0 || bad > 0 || !db;
+    $("barInfo").textContent = ids.length === 0 ? L.bar0 : bad > 0 ? L.barBad(ids.length, bad) : L.barOk(ids.length);
+  }
+  function field(labelText, input) { const w = el("div","form"); w.append(el("label",null,labelText), input); return w; }
+
+  function renderItem(it, kind, doneView) {
+    const id = String(it.id);
+    const box = el("div", "item" + (it.late ? " isLate" : "") + (doneView ? " doneItem" : ""));
+    box.append(el("div","t", it.title));
+    const meta = el("div","meta");
+    const tl = it.type_label || it.type_ar; if (tl) meta.append(el("span","chip", tl));
+    if (it.late) meta.append(el("span","chip late", L.late));
+    if (it.due) meta.append(el("span","chip", L.due + it.due));
+    if (it.age_days != null) meta.append(el("span","chip", it.age_days === 0 ? L.today : L.ago(it.age_days)));
+    if ((kind === "waiting" || kind === "delegated") && it.holder) meta.append(el("span","chip", L.at + it.holder));
+    if (kind === "draft" && it.to) meta.append(el("span","chip", L.to + [].concat(it.to).join(", ")));
+    box.append(meta);
+    const r = results[id];
+    if (doneView) {
+      if (r) { const d = el("div","res " + r.state, r.text); if (r.state === "wait" && r.undo) { const u = el("button","undo", L.undo); u.type = "button"; u.onclick = r.undo; d.append(" ", u); } box.append(d); }
+      return box;
+    }
+    if (kind === "question" && it.question) box.append(el("div","q", it.question));
+    if (kind === "question" && it.recommendation) box.append(el("div","last", L.rec + it.recommendation));
+    if (kind === "draft" && it.text) { const d = el("details"); d.append(el("summary",null,L.draftText), el("div","q", it.text)); box.append(d); }
+    if (it.last && kind !== "draft") box.append(el("div","last", it.last));
+    const link = safeUrl(it.link);
+    if (link) { const a = el("a",null,L.open); a.href = link; a.target = "_blank"; a.rel = "noopener"; box.append(a); }
+    if (r && r.state === "no") box.append(el("div","res no", r.text));
+
+    const acts = el("div","acts");
+    const cur = sel[id] || {};
+    for (const a of ACTS[kind]) {
+      const code = Array.isArray(a) ? a[0] : a, label = L.acts[Array.isArray(a) ? a[1] : a];
+      if (code === "accept" && !it.recommendation) continue;
+      const b = el("button", null, label); b.type = "button";
+      b.setAttribute("aria-pressed", cur.action === code ? "true" : "false");
+      b.onclick = () => { if (sel[id] && sel[id].action === code) delete sel[id]; else { sel[id] = { ...(sel[id] || {}), action: code }; if (code === "accept") sel[id].answer = it.recommendation || ""; } saveDraft(); render(); };
+      acts.append(b);
+    }
+    box.append(acts);
+    if (cur.action) {
+      box.classList.add("sel");
+      const f = el("div","form");
+      if (cur.action === "postpone") {
+        const q = el("div","acts");
+        for (const [lab, val] of quickTimes()) { const b = el("button", null, lab); b.type = "button"; b.title = val; b.setAttribute("aria-pressed", cur.date === val ? "true" : "false"); b.onclick = () => { sel[id].date = val; saveDraft(); render(); }; q.append(b); }
+        const i = el("input"); i.type = "date"; i.id = "d-" + id; i.value = (cur.date || "").slice(0,10);
+        const tt = el("input"); tt.type = "time"; tt.id = "dt-" + id; tt.value = (cur.date || "").slice(11,16);
+        const upd = () => { sel[id].date = i.value ? i.value + (tt.value ? " " + tt.value : "") : ""; saveDraft(); updateBar(); };
+        i.oninput = upd; tt.oninput = upd;
+        const row = el("div","acts"); row.append(i, tt);
+        f.append(field(L.when, q), field(L.orPick, row));
+        if (cur.date) f.append(el("div","last", L.backOn + cur.date));
+      }
+      if (["delegate_full","delegate_ask","custom"].includes(cur.action)) f.append(el("div","last", L.hint));
+      if (cur.action === "accept" && cur.answer) f.append(el("div","last", L.yourAnswer + cur.answer));
+      if (cur.action === "hand_over") {
+        const h = el("input"); h.type = "email"; h.id = "h-" + id; h.placeholder = L.whoPh; h.value = cur.holder || ""; h.dir = "ltr";
+        h.oninput = () => { sel[id].holder = h.value.trim(); saveDraft(); updateBar(); };
+        const t = el("input"); t.id = "ht-" + id; t.placeholder = L.nextPh; t.value = cur.title || "";
+        t.oninput = () => { sel[id].title = t.value; saveDraft(); updateBar(); };
+        const d = el("input"); d.type = "date"; d.id = "hd-" + id; d.value = cur.date || "";
+        d.oninput = () => { sel[id].date = d.value; saveDraft(); };
+        f.append(field(L.who, h), field(L.next, t), field(L.hdate, d));
+      }
+      if (cur.action === "answer") {
+        const opts = Array.isArray(it.options) ? it.options : (typeof it.options === "string" && it.options ? it.options.split(/\n|؛|;/).map(s => s.trim()).filter(Boolean) : []);
+        if (opts.length) {
+          const s = el("select"); s.id = "o-" + id; s.append(el("option", null, L.pick));
+          for (const o of opts) { const op = el("option", null, String(o)); op.value = String(o); s.append(op); }
+          s.value = cur.answer || ""; s.onchange = () => { sel[id].answer = s.value; saveDraft(); updateBar(); };
+          f.append(field(L.option, s));
+        } else {
+          const a = el("textarea"); a.id = "a-" + id; a.value = cur.answer || ""; a.placeholder = L.ansPh;
+          a.oninput = () => { sel[id].answer = a.value; saveDraft(); updateBar(); };
+          f.append(field(L.ans, a));
+        }
+      }
+      const opt = OPTIONAL.has(cur.action);
+      const rl = L.reason[cur.action] || L.reason._;
+      const ta = el("textarea"); ta.id = "r-" + id; ta.value = cur.reason || "";
+      ta.placeholder = opt ? L.optionalPh : rl[1];
+      if (!opt && !(cur.reason || "").trim()) ta.classList.add("need");
+      ta.oninput = () => { sel[id].reason = ta.value; ta.classList.toggle("need", !opt && !ta.value.trim()); saveDraft(); updateBar(); };
+      f.append(field(opt ? L.optional : rl[0] + " " + L.required, ta));
+      if (L.chips[cur.action]) { const c = el("div","acts"); for (const t of L.chips[cur.action]) { const b = el("button", null, t); b.type = "button"; b.onclick = () => { sel[id].reason = t; saveDraft(); render(); }; c.append(b); } f.append(c); }
+      box.append(f);
+    }
+    return box;
+  }
+
+  function section(title, count, open, body) {
+    const sec = el("details"); if (open) sec.open = true;
+    const sm = el("summary"); const h = el("h2", null, title); h.append(el("span","n", String(count))); sm.append(h); sec.append(sm, body); return sec;
+  }
+
+  function render() {
+    const root = $("sections"); root.textContent = "";
+    if (!report) { root.append(el("div","empty", L.empty)); updateBar(); return; }
+    $("built").textContent = L.built(report.built_at || "?", report.timezone || "");
+    if (report.run_message) { const d = el("details"); const s = el("summary"); s.append(el("h2",null,L.runMsg)); d.append(s, el("pre","msg", report.run_message)); root.append(d); }
+    const doneList = [];
+    for (const [key, kind, open] of SECTIONS) {
+      const all = Array.isArray(report[key]) ? report[key] : [];
+      // submitted items leave their section at once and go to "done today"; a refused one comes back with its reason
+      const list = [];
+      for (const it of all) { const r = results[String(it.id)]; if (r && r.state !== "no") doneList.push([it, kind]); else list.push(it); }
+      const body = el("div","list");
+      if (!list.length) body.append(el("div","empty", L.nothing));
+      for (const it of list) body.append(renderItem(it, kind, false));
+      root.append(section(L.sections[key], list.length, open || list.some(x => sel[String(x.id)]), body));
+    }
+    if (Array.isArray(report.jobs) && report.jobs.length) {
+      const body = el("div","list");
+      for (const j of report.jobs) { const b = el("div","item"); b.append(el("div","t", j.title || "")); if (j.text) b.append(el("div","q", j.text)); body.append(b); }
+      root.append(section(L.jobs, report.jobs.length, false, body));
+    }
+    if (Array.isArray(report.gate) && report.gate.length) { const d = el("details"); const s = el("summary"); s.append(el("h2",null,L.gate)); d.append(s, el("pre","msg", report.gate.join("\n"))); root.append(d); }
+    // items closed since the report was built are no longer in it; their results still show here until tomorrow
+    const shown = new Set(doneList.map(([it]) => String(it.id)));
+    for (const b of batches) for (const ln of (b.lines || [])) { const id = String(ln.item); const r = results[id]; if (r && r.state !== "no" && !shown.has(id)) { shown.add(id); doneList.push([{ id: ln.item, title: ln.title_seen || ("#" + ln.item) }, "mine"]); } }
+    const body = el("div","list");
+    if (!doneList.length) body.append(el("div","empty", L.nothing));
+    for (const [it, kind] of doneList) body.append(renderItem(it, kind, true));
+    root.append(section(L.sections.done, doneList.length, doneList.length > 0, body));
+    updateBar();
+  }
+
+  function undoLine(docId, item) {
+    return async () => {
+      const b = batches.find(x => x.id === docId); if (!b || b.result) return;
+      const lines = (b.lines || []).filter(l => String(l.item) !== String(item));
+      try { if (lines.length) await db.doc("batches/" + docId).update({ lines }); else await db.doc("batches/" + docId).delete(); }
+      catch (e) { status(L.sendFail(e && e.message ? e.message : "")); }
+    };
+  }
+
+  function applyBatches(snap) {
+    const out = {};
+    const dayAgo = Date.now() - 24 * 3600000;
+    batches = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      .filter(b => { const ms = b.submitted_ms || Date.parse(String(b.submitted_at || '').replace(' ', 'T') + 'Z'); return !ms || ms > dayAgo - 6 * 3600000; })
+      .sort((a, b) => String(a.submitted_at).localeCompare(String(b.submitted_at)));
+    for (const b of batches) {
+      const res = (b.result && Array.isArray(b.result.lines)) ? b.result.lines : null;
+      (b.lines || []).forEach((ln, i) => {
+        const id = String(ln.item);
+        if (!res) out[id] = { state: "wait", text: L.wait, undo: undoLine(b.id, ln.item) };
+        else { const r = res.find(x => String(x.item) === id && x.action === ln.action) || res[i];
+          out[id] = r && r.ok ? { state: "ok", text: L.ok + (b.result.applied_at ? " " + b.result.applied_at : "") } : { state: "no", text: L.no + ((r && r.error) || L.unknown) }; }
+      });
+    }
+    results = out; render();
+  }
+
+  function status(msg) { const s = $("status"); s.hidden = !msg; s.textContent = msg || ""; }
+
+  $("submit").onclick = async () => {
+    const ids = Object.keys(sel).filter(k => sel[k] && sel[k].action && lineValid(sel[k]));
+    if (!db || !ids.length) return;
+    const now = new Date(), pad = (n) => String(n).padStart(2,"0");
+    const local = new Intl.DateTimeFormat("en-CA",{timeZone:(report && report.timezone) || "UTC",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}).format(now).replace(",","");
+    const bid = "b" + now.getUTCFullYear() + pad(now.getUTCMonth()+1) + pad(now.getUTCDate()) + "T" + pad(now.getUTCHours()) + pad(now.getUTCMinutes()) + pad(now.getUTCSeconds()) + Math.random().toString(36).slice(2,6);
+    const titles = {}; if (report) for (const [key] of SECTIONS) for (const it of (report[key] || [])) titles[String(it.id)] = it.title;
+    const lines = ids.map(k => { const s = sel[k]; const ln = { item: Number(k), action: s.action === "accept" ? "answer" : s.action, reason: (s.reason || "").trim(), title_seen: titles[k] || "" };
+      if (s.action === "accept") ln.accepted = true;
+      if (s.date) ln.date = s.date; if (s.holder) ln.holder = s.holder; if (s.title) ln.title = s.title.trim(); if (s.answer) ln.answer = s.answer.trim(); return ln; });
+    $("submit").disabled = true; status(L.sending);
+    try {
+      await db.doc("batches/" + bid).set({ id: bid, submitted_at: local, submitted_ms: now.getTime(), lines, status: "pending" });
+      sel = {}; saveDraft(); status(L.sent(lines.length)); render();
+    } catch (e) { status(L.sendFail(e && e.message ? e.message : L.unknown)); updateBar(); }
+  };
+
+  render();
+  const timer = setTimeout(() => { if (!report) status(L.noData); }, 10000);
+  (async () => {
+    try { db = await window.claude?.use?.("db"); } catch (e) { db = null; }
+    if (!db) { clearTimeout(timer); status(L.noDb); return; }
+    db.doc("report/current").onSnapshot((snap) => { clearTimeout(timer); report = snap.exists ? snap.data() : null; if (report) setLang(report.language || DEFAULT_LANG); if (snap.exists) status(""); render(); },
+      (e) => { clearTimeout(timer); status(L.readFail(e && e.message ? e.message : "")); });
+    db.collection("batches").orderBy("submitted_at","desc").limit(40).onSnapshot(applyBatches, () => {});
+    updateBar();
+  })();
+})();
+</script>

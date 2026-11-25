@@ -57,7 +57,7 @@ def mr(*a):
 
 
 rc, out, _ = mr('version')
-check('version: a new database records release 1.7', rc == 0 and out['installed'] == '1.7' and out['programs'] == '1.7', out)
+check('version: a new database records the current release', rc == 0 and out['installed'] == mdb.VERSION and out['programs'] == mdb.VERSION, out)
 rc, out, _ = mr('run-start', '--kind', 'session')
 R = str(out['run'])
 rc, out, _ = mr('record', '--run', R, '--channel', 'Claude sessions', '--type', 'session', '--external-id', 's1.md',
@@ -291,10 +291,10 @@ else:
           sha(os.path.join(F, 'tools', 'mrun.py')) == sha(os.path.join(DB_T, 'mrun.py')))
     check('apply: the owner\'s changed program is untouched and the new one is beside it',
           sha(os.path.join(F, 'tools', 'run_gate.py')) == before['run_gate.py'] and
-          os.path.exists(os.path.join(F, 'tools', 'run_gate.py.new-1.7')))
+          os.path.exists(os.path.join(F, 'tools', 'run_gate.py.new-' + mdb.VERSION)))
     c = sqlite3.connect(os.path.join(F, 'db', 'marionette.db'))
     check('apply: the release is recorded in the database',
-          c.execute("SELECT value FROM meta WHERE key='marionette_version'").fetchone()[0] == '1.7')
+          c.execute("SELECT value FROM meta WHERE key='marionette_version'").fetchone()[0] == mdb.VERSION)
     check('apply: the issue type and the new permission lines are there',
           c.execute("SELECT 1 FROM type WHERE code='issue'").fetchone() and
           c.execute("SELECT 1 FROM action_rule WHERE scope='followup' AND action='rename'").fetchone())
@@ -305,8 +305,8 @@ else:
                     (UNDATED,)).fetchone())
     c.close()
     check('apply: state.json and runs.log say so',
-          json.load(open(os.path.join(F, 'state.json')))['memory']['version'] == '1.7' and
-          'upgrade 1.6 -> 1.7' in open(os.path.join(F, 'runs.log')).read())
+          json.load(open(os.path.join(F, 'state.json')))['memory']['version'] == mdb.VERSION and
+          ('upgrade 1.6 -> ' + mdb.VERSION) in open(os.path.join(F, 'runs.log')).read())
     rc, out, _ = run([os.path.join(F, 'tools', 'mrun.py'), 'brief'], cwd=F)
     check('the upgraded installation runs (brief)', rc == 0 and 'ON THE USER' in str(out), str(out)[:300])
     rc, out, _ = run([UP, '--followup', F, '--apply'])

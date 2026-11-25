@@ -1,5 +1,61 @@
 # Changelog
 
+## 1.8 (2026-11-25)
+
+### Why this release exists
+
+The author's auditor found ten faults in three days of runs on 22 to 25 November 2026, fixed each one, and the owner
+answered: "fixing is not enough. We have to prevent it from happening again." Several had been fixed before and came
+back, because the fix was a sentence in a rule that the next run did not follow. Each fault below now has a guard in
+the program, so no run can skip it:
+
+1. **Checks moved in bulk.** The rule of 1.7 says every check that comes is handled in that run. Three runs in a row
+   "handled" about 100 checks each by one mailbox search and one quote, then moved every next check to the next day,
+   where the same thing happened again. No item was looked at.
+2. **The same story line twice.** A run that repeated a step wrote 8 identical lines into one item; 47 such lines sat
+   in 33 items. The program had no way to remove one line, and nothing may be deleted.
+3. **"For information" items that asked something.** Items typed "for information" carried a question to the owner
+   ("should we reply to this review?"), and items that asked nothing stayed open and were counted late.
+4. **A scheduled run that never happened.** After the scheduled tasks were recreated, one run left no trace at all;
+   it was noticed two days later, by the auditor.
+5. **Sources read in part and never finished.** 51 sources had been read only by their subject line, some for three
+   days, including money transfers; each run's end-of-run check counted only its own.
+6. **Rule decisions that did not name their file.** Five decisions, two of them missed by the auditor itself.
+7. **The same promise in two items**, found only when the second was closed.
+
+The release also brings the panel the owner asked for: "an interactive window where I can simply check things done,
+write the reasons, or read the remarks beside them".
+
+### What changed
+
+- `mdb.py`: a story line identical to one the item already has is never written again, whatever the path. A
+  duplicate is marked retracted, never deleted (`retract_evidence`): the line stays, its full text goes to the audit
+  trail, and every view hides it. One quote may move the next check of at most 3 items in a run.
+- `mrun.py`: for-information items are never late and never on the owner's list; `new-item` refuses one held by the
+  owner that holds a question, and names the open items with the same counterparty. `run-start` names the scheduled
+  runs of the last 48 hours that did not happen or started late (state.json `periodic_schedule`). The end-of-run
+  check also counts for-information items left open, sources left unclassified by earlier runs, rule decisions without
+  their file, and notes sources read in part for more than 48 hours. `run-end` refuses, for a scheduled run, while a
+  source has had no verdict and no reason for 48 hours. `unreadable` closes a source that still cannot be read on a
+  second attempt. `panel-data` and `apply-panel` serve the panel; the brief lists items DELEGATED TO MARIONETTE.
+- `templates/panel/panel.html`: the panel page, in English or Arabic, right to left when Arabic, readable on a phone.
+  Each item offers the actions the database allows in the owner's name; quick postpone times follow the owner's zone
+  and working week; what was submitted leaves its section at once and shows under "Done today" with its result, and a
+  line not yet applied can be undone.
+- `upgrade.py`: the 1.8 data step marks existing duplicate story lines retracted, dates the new guards from the
+  upgrade (so they judge only what comes after it), and creates the Marionette party if an installation lacks it.
+- `SKILL.md`, `db_usage.md`, `upgrades/1.8.md`: the panel, the guards, delegated items, and the auditor's new rule: a
+  fix is finished only with the measure that stops the fault coming back.
+- `tests/test_release_1_8.py`: 33 checks, including the upgrade of a real 1.7 installation.
+
+### Upgrading
+
+Replace the skill folder with this one. The next session or scheduled run finds the installation older than 1.8 and
+upgrades it as before (full copy first, `upgrade.py --undo` to go back), then shows the owner the rules proposed for
+the manual. The panel is optional: the skill offers to set it up, and nothing changes in the messages until the owner
+has tried it and agrees. To use the missed-run guard, add `periodic_schedule` to state.json with the times of the
+periodic task.
+
 ## Test setup (2026-11-23, no change to the programs)
 
 The first test run of 1.7 on GitHub failed on Python 3.9 only, before any test ran: GitHub's

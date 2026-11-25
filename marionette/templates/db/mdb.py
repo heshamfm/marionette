@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Marionette by Hesham Elmahdy (github.com/heshamfm): the database door, version 1.7.
+"""Marionette by Hesham Elmahdy (github.com/heshamfm): the database door, version 1.8.
 
 This program is the only door for writing to the Marionette database.
 - Judgment (which action is needed, and why) belongs to the user or to Claude.
@@ -46,7 +46,7 @@ NO_VERDICT = 'none'
 ACTIVE = ('open', 'deferred', 'new', 'scheduled', 'shown', 'ready', 'reported', 'in_progress')
 WEEKDAYS = ('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun')
 SESSIONS_CHANNEL = 'Claude sessions'
-VERSION = '1.7'   # the Marionette release these programs belong to (meta "marionette_version")
+VERSION = '1.8'   # the Marionette release these programs belong to (meta "marionette_version")
 # the follow-up items proper; every one that is alive carries a due date or a next check (1.7)
 ITEM_TYPES = ('commitment', 'reply_needed', 'decision_needed', 'for_info')
 ALIVE_ITEM = ('open', 'deferred', 'new')
@@ -329,6 +329,13 @@ class Door:
         st = self.thing(src)
         if st['grp'] != 'source' or st['type'] == 'file':
             raise Refused(f'thing {src} is not a source (message, event, meeting, record, content or session)')
+        # 1.8: the same line (thing, source, quote) is never written twice, whatever the path that writes it
+        same = self.one('SELECT id FROM evidence WHERE thing_id=? AND source_id=? AND quote=? AND id NOT IN '
+                        "(SELECT CAST(new_value AS INTEGER) FROM audit WHERE action='retract_evidence')",
+                        (tid, src, ev['quote']))
+        if same:
+            self.ctx['evidence_id'] = same['id']
+            return same['id']
         eid = self.conn.execute('INSERT INTO evidence(thing_id,source_id,quote,position,quote_date,inferred) '
                                 'VALUES(?,?,?,?,?,?)', (tid, src, ev['quote'], ev.get('position'),
                                                         ev.get('quote_date'), 1 if ev.get('inferred') else 0)
@@ -494,7 +501,20 @@ class Door:
         self.set('followup', tid, 'due', p.get('due'))
         self.ensure_dated(tid)
 
+    BULK_CHECK_LIMIT = 3
+
     def a_set_next_check(self, tid, p):
+        # 1.8: a check is handled item by item. One quote that already moved the next check of 3 other items in the
+        # same run is a sweep that looked at none of them in particular: refused.
+        q = str((self.ctx.get('evidence') or {}).get('quote') or '').strip()
+        if self.ctx.get('run') and q and self.ctx.get('actor') == 'claude':
+            n = self.one("SELECT COUNT(DISTINCT a.thing_id) FROM audit a JOIN evidence e ON e.id=a.evidence_id "
+                         "WHERE a.run_id=? AND a.field='followup.next_check' AND e.quote=? AND a.thing_id<>?",
+                         (self.ctx['run'], q, tid))[0]
+            if n >= self.BULK_CHECK_LIMIT:
+                raise Refused('this quote already moved the next check of 3 other items in this run: that is a bulk '
+                              'sweep. Look this item up live (its counterparty, its thread, its record) and quote '
+                              'what was found or not found for THIS item')
         self.set('followup', tid, 'next_check', p.get('next_check'))
         self.ensure_dated(tid)
 
@@ -1100,6 +1120,25 @@ class Door:
             raise Refused('not marked as inferred: ' + ', '.join(sorted(set(names) - marked)))
         self.set_details(table, tid, {'_inferred': sorted(marked - set(names))})
 
+    def retracted_ids(self):
+        """Story lines marked retracted (1.8): kept in the database, hidden from every view."""
+        return {int(r[0]) for r in self.conn.execute(
+            "SELECT new_value FROM audit WHERE action='retract_evidence'")}
+
+    def a_retract_evidence(self, tid, p):
+        """Mark one story line retracted (1.8). Nothing is deleted: the line stays in the evidence table, its full
+        text goes to the audit trail with the reason, and every view hides it. Used for duplicates."""
+        eid, why = p.get('evidence_id'), str(p.get('reason') or '').strip()
+        if not eid or len(why) < 10:
+            raise Refused('give evidence_id and a reason of at least a few words')
+        row = self.one('SELECT * FROM evidence WHERE id=?', (int(eid),))
+        if not row or row['thing_id'] != tid:
+            raise Refused(f'story line {eid} does not belong to thing {tid}')
+        if int(eid) in self.retracted_ids():
+            return {'id': tid, 'already': True}
+        self.audit(tid, 'retract_evidence', 'evidence', dict(row), int(eid), note=why)
+        return {'id': tid, 'retracted': int(eid)}
+
     def a_add_evidence(self, tid, p):
         if not self.ctx.get('evidence_id'):
             raise Refused('give the evidence: a source number and the verbatim quote')
@@ -1115,7 +1154,9 @@ class Door:
         t['record'] = dict(row) if row else None
         t['links'] = [dict(r) for r in self.conn.execute(
             'SELECT from_id,to_id,role,inferred FROM link WHERE from_id=? OR to_id=?', (tid, tid))]
-        t['evidence'] = [dict(r) for r in self.conn.execute('SELECT * FROM evidence WHERE thing_id=?', (tid,))]
+        gone = self.retracted_ids()
+        t['evidence'] = [dict(r) for r in self.conn.execute('SELECT * FROM evidence WHERE thing_id=?', (tid,))
+                         if r['id'] not in gone]
         if t['type'] == 'party':
             t['handles'] = [dict(r) for r in self.conn.execute(
                 'SELECT kind,value FROM party_handle WHERE party_id=?', (tid,))]
@@ -1275,6 +1316,7 @@ def init(path, user_name, user_email=None, now=None, timezone=DEFAULT_TZ, workda
     door.conn.execute('INSERT INTO channel(thing_id,connection) VALUES(?,?)', (ch, 'claude'))
     door.conn.executemany('INSERT INTO meta(key,value) VALUES(?,?)',
                           [('user_party_id', str(me)), ('marionette_party_id', str(mar)),
+                           ('unclassified_guard_since', door.now()[:16]),
                            ('sessions_channel_id', str(ch)), ('timezone', timezone),
                            ('workdays', json.dumps(workdays)), ('week_start', week_start),
                            ('language', language)])
