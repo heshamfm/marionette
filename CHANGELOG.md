@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.8.1 (2026-11-26)
+
+### Why this release exists
+
+The author's own installation was found running programs that matched no published release. Since the move to the
+database, fixes had been made directly in the installation and written for the repository later, or not at all. Such
+an installation cannot be upgraded (the upgrade refuses changed core programs) and silently stops receiving fixes.
+Two features existed only there.
+
+### What changed
+
+- `mrun.py`: the brief section CHAT CHECK lists the items whose next step is the owner's and that rest on a chat; the
+  run opens those chats (when they show no unread messages) and looks for the owner's answer. The end-of-run check
+  lists, from every run, spam the owner's rules cover that could not be marked (verdict code spam_unmarked).
+- `SKILL.md`: the programs are never edited in an installation; every change is made in the repository, released and
+  reaches installations by the upgrade; owner-specific values live in settings and the owner's files. The auditor
+  checks with `upgrade.py --check` that the installation's programs are a published release.
+- `upgrade.py`: the hashes of 1.8, so a 1.8 installation is recognised.
+- A section that asked the owner once whether a late item resting on no mail was already done was not carried over:
+  the panel lets the owner close any item directly.
+
+### Upgrading
+
+Replace the skill folder. The next session or run upgrades the installation from 1.8; nothing in the data changes.
+
 ## 1.8 (2026-11-25)
 
 ### Why this release exists

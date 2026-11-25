@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Marionette by Hesham Elmahdy (github.com/heshamfm): the run-time layer, version 1.8.
+"""Marionette by Hesham Elmahdy (github.com/heshamfm): the run-time layer, version 1.8.1.
 
 What the scheduled runs and the sessions use in an installation that keeps its memory in the database,
 instead of editing the files (index.tsv, items/, drafts.tsv, questions.md, reminders/, data/disposition.tsv,
@@ -117,6 +117,7 @@ TEXT = {
   'a_done': 'done', 'a_strike': 'struck out, will not do it', 'a_seen': 'seen', 'a_sent_as_is': 'sent as is',
   'a_discarded': 'discarded', 'a_postpone': 'postponed', 'a_answer': 'agreed with the recommendation',
   'a_take_back': 'taken back',
+  'unmarked': 'Spam the rules cover that could not be marked ({n}): try marking it again now, and name it first in the message with why it failed:',
  },
  'ar': {
   'you': 'أنت', 'open': 'مفتوح', 'waiting': 'بانتظار رد الآخرين', 'not_needed': 'أُغلق دون إجراء',
@@ -161,6 +162,7 @@ TEXT = {
   'tag_delegate_full': '[فوّضتَه كاملًا] ', 'tag_delegate_ask': '[فوّضتَه مع الرجوع إليك] ', 'tag_custom': '[تعليماتك] ',
   'a_done': 'أُنجز', 'a_strike': 'اشطبه: لن أعمل عليه', 'a_seen': 'اطّلعتُ عليه', 'a_sent_as_is': 'أرسلتُها كما هي',
   'a_discarded': 'تخلّصتُ منها', 'a_postpone': 'أجِّل', 'a_answer': 'موافق على المقترح', 'a_take_back': 'أسترجعه لنفسي',
+  'unmarked': 'مزعج لم أستطع تعليمه ({n}): أعد محاولة التعليم الآن، واذكره أول الرسالة مع سبب التعذر:',
  },
 }
 
@@ -371,6 +373,14 @@ class Run:
                  'type or date')
         for r in mine:
             L.append(f"- {r['id']} | due {r['due'] or '-'}" + (' LATE' if r['id'] in late else '') + f" | {r['title']}")
+        cc = self.chat_check(rows)
+        L.append('')
+        L.append(f'## CHAT CHECK ({len(cc)}): the next step is the user\'s and it lives in a chat, where the user may '
+                 'already have acted. Open each chat that shows no unread messages (read receipts) and look for the '
+                 'user\'s message after the last event; record it and close or hand over the item')
+        for x in cc:
+            L.append(f"- {x['id']} | last event {x['last']}" + (' | chat draft waiting' if x['draft'] else '') +
+                     (' | LATE' if x['id'] in late else '') + f" | {x['title']}")
         mp = self.marionette_party()
         dg = [r for r in rows if r['holder_id'] == mp]
         L.append('')
@@ -590,6 +600,8 @@ class Run:
                         "WHERE s.run_id=? AND s.verdict IN ('ignored','informed') ORDER BY t.id", (run,)):
             if x['verdict'] == 'ignored':
                 code = (x['verdict_reason'] or '').split(':', 1)[0].strip()
+                if code == 'spam_unmarked':
+                    continue  # 1.8.1: listed in its own section below, from any run, until a run marks it
                 ign.setdefault(code, []).append(x['title'])
             else:
                 inf.append(x['title'])
@@ -605,13 +617,16 @@ class Run:
             bad.append(self.t('undated_item', i=x['id'], t=x['title'][:90]))
         start = r['started'][:16]
         # 1.8: a for-information item is closed once told; a source left unclassified by an earlier run; a rule
-        # decision that does not name its file; sources read in part and parked
+        # decision that does not name its file; sources read in part and parked. Like every 1.8 guard they judge only
+        # what was recorded since the guard started (meta unclassified_guard_since), never what came before it
+        since = self.door.meta('unclassified_guard_since') or start
         for x in self.q("SELECT t.id, t.title FROM thing t JOIN followup f ON f.thing_id=t.id WHERE t.type='for_info' "
-                        "AND f.status IN ('open','new') AND t.created_at<? ORDER BY t.id", (start,)):
+                        "AND f.status IN ('open','new') AND t.created_at>=? AND t.created_at<? ORDER BY t.id",
+                        (since, start)):
             bad.append(self.t('info_open', i=x['id'], t=x['title'][:80]))
         for x in self.q("SELECT t.id, t.title, t.created_at FROM source s JOIN thing t ON t.id=s.thing_id "
-                        "WHERE s.verdict IS NULL AND s.read_fail_reason IS NULL AND t.created_at<? ORDER BY t.id "
-                        "LIMIT 30", (start,)):
+                        "WHERE s.verdict IS NULL AND s.read_fail_reason IS NULL AND t.created_at>=? AND t.created_at<? "
+                        "ORDER BY t.id LIMIT 30", (since, start)):
             bad.append(self.t('backlog', d=x['created_at'][:16], i=x['id'], t=x['title'][:70]))
         for d in self.decisions_without_file():
             bad.append(self.t('no_file', d=d))
@@ -626,6 +641,12 @@ class Run:
                         "s.run_id=? AND s.read_fail_reason LIKE 'UNREADABLE%'", (run,)):
             notes.append(self.t('unreadable_told', t=x['title'][:80], r=x['read_fail_reason'][len(UNREADABLE):160]))
         print(self.t('gate_head', s=start, r=read, n=len(enabled)))
+        unmarked = self.q("SELECT t.id, t.title, s.verdict_reason FROM source s JOIN thing t ON t.id=s.thing_id "
+                          "WHERE s.verdict='ignored' AND s.verdict_reason LIKE 'spam_unmarked:%' ORDER BY t.id")
+        if unmarked:
+            print(self.t('unmarked', n=len(unmarked)))
+            for x in unmarked:
+                print(f"- [{x['id']}] {x['title']}: {x['verdict_reason'].split(':', 1)[1].strip()}")
         for line in bad:
             print(self.t('violation') + line)
         for line in notes:
@@ -672,6 +693,29 @@ class Run:
     }
     OPTIONAL_REASON = ('done', 'strike', 'seen', 'sent_as_is', 'discarded', 'postpone', 'answer', 'take_back')
     TAGS = ('delegate_full', 'delegate_ask', 'custom')
+
+    CHAT_WORDS = ('whatsapp', 'telegram', 'signal', 'slack', 'teams', 'chat', 'واتساب')
+
+    def chat_check(self, rows):
+        """1.8.1: items whose next step is the user's and that rest on a chat channel (a chat source, a waiting chat
+        draft, or a chat named in the title or details). The user may have answered in the chat, which no run sees
+        unless it opens the chat."""
+        chat_ch = {r['id'] for r in self.q('SELECT t.id, t.title FROM channel c JOIN thing t ON t.id=c.thing_id')
+                   if any(w in r['title'].lower() for w in self.CHAT_WORDS)}
+        drafts = {json.loads(r[0]).get('serves') for r in self.q(
+            "SELECT f.details FROM followup f JOIN thing t ON t.id=f.thing_id WHERE t.type='draft' AND f.status='ready'")
+            if json.loads(r[0]).get('channel_id') in chat_ch}
+        out = []
+        for r in rows:
+            if r['holder_id'] != self.me or self.is_question(r):
+                continue
+            src = {x[0] for x in self.q('SELECT DISTINCT s.channel_id FROM evidence e JOIN source s ON '
+                                        's.thing_id=e.source_id WHERE e.thing_id=?', (r['id'],))}
+            text = (r['title'] + ' ' + r['details']).lower()
+            if src & chat_ch or r['id'] in drafts or any(w in text for w in ('whatsapp', 'واتساب')):
+                out.append({'id': r['id'], 'title': r['title'], 'last': self.last_event(r['id'])[:16],
+                            'draft': r['id'] in drafts})
+        return out
 
     def marionette_party(self):
         v = self.door.meta('marionette_party_id')

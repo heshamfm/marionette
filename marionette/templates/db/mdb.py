@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Marionette by Hesham Elmahdy (github.com/heshamfm): the database door, version 1.8.
+"""Marionette by Hesham Elmahdy (github.com/heshamfm): the database door, version 1.8.1.
 
 This program is the only door for writing to the Marionette database.
 - Judgment (which action is needed, and why) belongs to the user or to Claude.
@@ -46,7 +46,7 @@ NO_VERDICT = 'none'
 ACTIVE = ('open', 'deferred', 'new', 'scheduled', 'shown', 'ready', 'reported', 'in_progress')
 WEEKDAYS = ('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun')
 SESSIONS_CHANNEL = 'Claude sessions'
-VERSION = '1.8'   # the Marionette release these programs belong to (meta "marionette_version")
+VERSION = '1.8.1'   # the Marionette release these programs belong to (meta "marionette_version")
 # the follow-up items proper; every one that is alive carries a due date or a next check (1.7)
 ITEM_TYPES = ('commitment', 'reply_needed', 'decision_needed', 'for_info')
 ALIVE_ITEM = ('open', 'deferred', 'new')

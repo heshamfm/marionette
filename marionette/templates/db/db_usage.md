@@ -1,6 +1,6 @@
 # The Marionette database: how runs, jobs and sessions read and write it
 
-Marionette by Hesham Elmahdy (github.com/heshamfm), version 1.8. This file is the home of every rule on HOW to read
+Marionette by Hesham Elmahdy (github.com/heshamfm), version 1.8.1. This file is the home of every rule on HOW to read
 and write the database. What to do and when stays in MANUAL.md, channels.md and jobs/. When this file exists in
 tools/, the memory is the database: the marionette skill sends every read and every write here.
 
@@ -88,6 +88,15 @@ Each guard is in the program, so a run cannot skip it:
   deleted message, access refused): unreadable --run R --source S --reason "<what was tried and why it fails>". It is
   closed and named once in the message. Something readable with more effort (another mailbox, an attachment, a
   transcript not ready yet) is never unreadable.
+
+## Chat check and unmarked spam (1.8.1)
+- The brief section CHAT CHECK lists the items whose next step is the owner's and that rest on a chat (a chat source,
+  a waiting chat draft, or WhatsApp named in the item). The owner may have answered in the chat. Every periodic run
+  opens each of these chats that shows no unread messages (opening an unread chat sends read receipts) and reads
+  every message after the item's last event; a message from the owner that answers or does the step is recorded,
+  quoted, and the item is closed or handed over.
+- A source whose verdict is ignored with the code spam_unmarked (spam the owner's rules cover, that could not be
+  marked) is listed by the end-of-run check in its own section, from every run, until a run marks it.
 
 ## The panel (1.8)
 One private Artifact page where the owner reads the report and acts on items: templates/panel/panel.html in the skill,

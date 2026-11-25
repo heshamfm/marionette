@@ -71,7 +71,19 @@ PUBLISHED['1.7'] = {
     'run_gate.py': '1c1710fd6f57778e6e1e62571685d4e927d7951863ace32accaead84a797947a',
     'build_status.py': '09bd0fcc3146cc214d7290881af38242436e2e33abcf937bcc6887a00a23d93f',
 }
-RELEASES = ('1.5', '1.6', '1.7', '1.8')   # in order; the data fixes of each release after the installed one are applied
+PUBLISHED['1.8'] = {
+    'mdb.py': '549678019d4fbfc0b4af925d7745432d0942aca3d926b74dde58759f35a3138a',
+    'mrun.py': '843ff78242a0d1c6a342c718f8fe053f6be6c628127b091324fcd35d9b2a04c8',
+    'schema_v0.1.sql': '467ac65fec46daad9918301652fec374d34173d9440b660c3921492cf01d4ec0',
+    'seed_v0.1.py': 'd4b9b1c684f0246ff92c8144dd02d1cf4e61c53775b2592c2b2f7bdfbf143614',
+    'migrate.py': '8c3fd0aa749a8d874306ba9056daa00f17ab589c8ce67265f5da4ebf98d311d2',
+    'upgrade.py': '28ae809175ded4bfba2725ce7efd86e1778795ba038b79167e0564d1b5202c5a',
+    'db_usage.md': 'e41801c73e1bc2838d9e135f2d901d1ddd152daad7ec69d9a5d41a2ad5e0a5db',
+    'brief.py': 'adfa4519e75e39babd15a4c1c7dc3224deec8ca042437af8d61ae5d95feefa2d',
+    'run_gate.py': '1c1710fd6f57778e6e1e62571685d4e927d7951863ace32accaead84a797947a',
+    'build_status.py': '09bd0fcc3146cc214d7290881af38242436e2e33abcf937bcc6887a00a23d93f',
+}
+RELEASES = ('1.5', '1.6', '1.7', '1.8', '1.8.1')   # in order; the data fixes of each release after the installed one are applied
 
 
 def sha(path):
@@ -177,8 +189,11 @@ class Upgrade:
         new_types = [t[0] for t in seed.TYPES if t[0] not in types]
         new_rules = {(r[0], r[1], r[2], r[3]) for r in seed.ACTION_RULES} - rules
         undated = self.undated(c)
-        dups = c.execute('SELECT coalesce(sum(n-1),0) FROM (SELECT count(*) n FROM evidence '
-                         'GROUP BY thing_id, source_id, quote HAVING count(*)>1)').fetchone()[0]
+        gone = {str(r[0]) for r in c.execute("SELECT new_value FROM audit WHERE action='retract_evidence'")}
+        dups = 0
+        for g in c.execute('SELECT group_concat(id) FROM evidence GROUP BY thing_id, source_id, quote '
+                           'HAVING count(*)>1'):
+            dups += max(0, len([i for i in g[0].split(',') if i not in gone]) - 1)
         return {'types_added': new_types, 'permission_lines_added': len(new_rules),
                 'open_items_given_a_next_check': len(undated) if self.before('1.7') else 0,
                 'duplicate_story_lines_retracted': dups if self.before('1.8') else 0}

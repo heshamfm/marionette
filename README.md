@@ -8,7 +8,7 @@ turns every request and commitment into a tracked item, prepares reply drafts fo
 to review, and reminds you of what is late. Everything it remembers lives on your own computer, in one
 database file (SQLite) with a few plain files beside it.
 
-Version 1.8, 2026-11-25. What changed and why: `CHANGELOG.md`.
+Version 1.8.1, 2026-11-26. What changed and why: `CHANGELOG.md`.
 
 ## What you get
 
@@ -215,7 +215,8 @@ Run each from the repository root:
 - `python3 tests/test_release_1_8.py`: the guards of 1.8 (duplicate story lines, bulk checks,
   for-information items, missed runs, unclassified sources, rule decisions without their file,
   unreadable sources), the panel's data and its apply (each action, refusals, a batch applied
-  twice), and the upgrade of a real 1.7 installation (33 checks; the upgrade part needs the git history).
+  twice), the chat check and spam that could not be marked (1.8.1), and the upgrade of a real 1.7
+  installation (36 checks; the upgrade part needs the git history).
 - `python3 tests/test_brief.py` and `python3 tests/test_run_gate.py`: the files
   version of the brief and of the end-of-run check, for installations not yet moved.
 

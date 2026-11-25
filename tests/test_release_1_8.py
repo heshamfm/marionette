@@ -55,7 +55,7 @@ def con():
 
 
 check('a new database records release 1.8 and dates its guards',
-      mdb.VERSION == '1.8' and door.meta('unclassified_guard_since') and door.meta('marionette_party_id'))
+      mdb.VERSION.startswith('1.8') and door.meta('unclassified_guard_since') and door.meta('marionette_party_id'))
 rc, out, _ = mr('run-start', '--kind', 'session')
 R = str(out['run'])
 rc, out, _ = mr('record', '--run', R, '--channel', 'Claude sessions', '--type', 'session', '--external-id', 's1.md',
@@ -226,6 +226,34 @@ r2 = json.load(open(os.path.join(F, 'r2.json')))['b20260101T0900aaaa']
 check('applying the same batch twice writes nothing the second time',
       all(x.get('already') for x in r2['lines'] if x['ok']), r2)
 
+# --- 1.8.1: chat check and spam that could not be marked
+d2 = mdb.Door(DB)
+d2.ctx = {'actor': 'program', 'action': 'create', 'run': None, 'evidence_id': None, 'held': None}
+d2.conn.execute('BEGIN IMMEDIATE')
+wch = d2.new_thing('channel', 'whatsapp_web')
+d2.conn.execute("INSERT INTO channel(thing_id,connection) VALUES(?,?)", (wch, 'chrome'))
+d2.conn.execute('COMMIT')
+R5 = R4
+rc, out, _ = mr('record', '--run', R5, '--channel', 'whatsapp_web', '--type', 'message', '--external-id', 'Ahmed 09:00',
+                '--title', 'Ahmed on chat: can we meet?', '--read', 'full')
+WS = str(out['id'])
+rc, out, _ = mr('new-item', '--run', R5, '--type', 'reply_needed', '--title', 'Ahmed asks to meet', '--holder', 'me',
+                '--requested-by', AH, '--next-check', '2026-12-01', '--details', '{"request": "meet"}', '--source', WS,
+                '--quote', 'can we meet?')
+WI = str(out['id'])
+rc, brief, _ = run([MR, 'brief'], env=ENV)
+check('the brief lists an item resting on a chat under CHAT CHECK',
+      'CHAT CHECK' in brief and ('- ' + WI + ' |') in brief.split('## CHAT CHECK')[1].split('##')[0], brief[-600:])
+check('the ask-once section is gone', 'ASK ONCE' not in brief)
+rc, out, _ = mr('record', '--run', R5, '--channel', 'whatsapp_web', '--type', 'message', '--external-id', 'spam 1',
+                '--title', 'Lottery winner', '--read', 'full')
+mr('verdict', '--run', R5, '--source', str(out['id']), '--verdict', 'ignored', '--reason',
+   'spam_unmarked:scam:chat:the report button was missing')
+p = subprocess.run([sys.executable, MR, 'gate', '--run', R5, '--channels-file', os.path.join(F, 'channels.md')],
+                   capture_output=True, text=True, env=ENV)
+check('the end-of-run check lists spam that could not be marked, apart from the ignored ones',
+      'could not be marked (1)' in p.stdout and 'Lottery winner' in p.stdout.split('could not be marked')[1], p.stdout)
+
 # the published programs carry nothing of one user
 code = ''.join(open(os.path.join(DB_T, f), encoding='utf-8').read() for f in ('mdb.py', 'mrun.py', 'upgrade.py'))
 code = code.replace('Marionette by Hesham Elmahdy (github.com/heshamfm)', '')
@@ -276,7 +304,7 @@ else:
     g = sqlite3.connect(os.path.join(G, 'db', 'marionette.db'))
     meta = dict(g.execute('SELECT key, value FROM meta').fetchall())
     check('apply: release, guard dates and the decision number are recorded',
-          meta.get('marionette_version') == '1.8' and meta.get('unclassified_guard_since') and
+          meta.get('marionette_version') == mdb.VERSION and meta.get('unclassified_guard_since') and
           meta.get('decision_file_rule_from') == '42', meta)
     check('apply: the duplicates are retracted, never deleted',
           g.execute("SELECT count(*) FROM audit WHERE action='retract_evidence'").fetchone()[0] == 2 and
@@ -284,7 +312,7 @@ else:
     check('apply: the permission line for retracting exists', g.execute(
         "SELECT count(*) FROM action_rule WHERE action='retract_evidence'").fetchone()[0] >= 2)
     rc, out, _ = run([UP, '--followup', G, '--check'])
-    check('a second check finds it up to date', rc == 0 and out['installed'] == '1.8', out)
+    check('a second check finds it up to date', rc == 0 and out['installed'] == mdb.VERSION, out)
 
 bad = [r for r in res if not r[1]]
 for name, good, info in res:
